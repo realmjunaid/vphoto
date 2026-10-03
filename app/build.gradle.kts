@@ -41,7 +41,7 @@ val missingReleaseSigning: List<String> = buildList {
 }
 
 /** Single place for the version: also names the APK file (vphoto_vX.Y.Z.apk). */
-val APP_VERSION_NAME = "1.0.2"
+val APP_VERSION_NAME = "1.0.3"
 
 android {
     namespace = "com.vphoto.app"
@@ -62,7 +62,7 @@ android {
         targetSdk = 36
         // VPhoto starts fresh: new package identity, first version.
         // Bump APP_VERSION_NAME (and code) here; the APK file is named from it below.
-        versionCode = 3
+        versionCode = 4
         versionName = APP_VERSION_NAME
     }
 
@@ -116,11 +116,13 @@ android {
     }
 }
 
-// APK file name: vphoto_v1.0.0.apk style (from APP_VERSION_NAME above).
+// APK file name: vphoto_v1.0.2.apk style (from APP_VERSION_NAME above).
+// Release builds get a -release suffix so both variants can coexist.
 androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
-            (output as VariantOutputImpl).outputFileName.set("vphoto_v$APP_VERSION_NAME.apk")
+            val suffix = if (variant.buildType == "release") "-release" else ""
+            (output as VariantOutputImpl).outputFileName.set("vphoto_v$APP_VERSION_NAME$suffix.apk")
         }
     }
 }
