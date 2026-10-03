@@ -37,17 +37,28 @@ class DeviceGalleryRepository @Inject constructor(
 
     fun requiredPermissions(): Array<String> = deviceGalleryPermissions()
 
+    /** In-memory snapshot: album switches filter this instantly (no rescan, no spinner). */
+    private var cachedPhotos: List<DevicePhotoRow>? = null
+
     /**
      * All device photos and videos. Empty when permission is missing —
      * the UI shows the permission prompt instead of crashing.
+     * [fresh] rescans MediaStore (first load / pull-to-refresh); otherwise the cache is used.
      */
-    suspend fun loadAllPhotos(): List<DevicePhotoRow> = withContext(Dispatchers.IO) {
-        if (!hasPermission()) return@withContext emptyList()
+    suspend fun loadAllPhotos(fresh: Boolean = false): List<DevicePhotoRow> = withContext(Dispatchers.IO) {
+        if (!hasPermission()) {
+            cachedPhotos = null
+            return@withContext emptyList()
+        }
+        if (!fresh) {
+            cachedPhotos?.let { return@withContext it }
+        }
         val rows = mutableListOf<DevicePhotoRow>()
         loadImages(rows)
         loadVideos(rows)
         // Respect the Settings sort order (default A–Z); the queries stay newest-first.
         sortDevicePhotos(rows, appPreferences.settings.first().sortOrder)
+            .also { cachedPhotos = it }
     }
 
     private fun loadImages(rows: MutableList<DevicePhotoRow>) {
@@ -157,12 +168,12 @@ class DeviceGalleryRepository @Inject constructor(
         }
     }
 
-    /** Folder-wise albums (Google Photos style). */
-    suspend fun loadAlbums(): List<DeviceAlbum> = groupIntoAlbums(loadAllPhotos())
+    /** Folder-wise albums (Google Photos style). Always a fresh scan. */
+    suspend fun loadAlbums(): List<DeviceAlbum> = groupIntoAlbums(loadAllPhotos(fresh = true))
 
-    /** Photos of one album; null/blank/"All" returns everything. */
+    /** Photos of one album; null/blank/"All" returns everything. Served from cache — instant. */
     suspend fun loadPhotos(albumName: String?): List<DevicePhotoRow> {
-        val all = loadAllPhotos()
+        val all = loadAllPhotos(fresh = false)
         if (albumName.isNullOrBlank() || albumName == ALL_PHOTOS_ALBUM) return all
         return all.filter { (it.bucketName.ifBlank { "Unknown" }) == albumName }
     }

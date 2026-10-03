@@ -88,7 +88,9 @@ class DeviceGalleryViewModel @Inject constructor(
             _uiState.update { it.copy(selectedAlbum = null, photos = emptyList()) }
             return
         }
-        _uiState.update { it.copy(selectedAlbum = name, isLoading = true) }
+        // Cache is warm after the first scan: open instantly, no loading flash.
+        val instant = _uiState.value.albums.isNotEmpty()
+        _uiState.update { it.copy(selectedAlbum = name, isLoading = !instant) }
         viewModelScope.launch {
             val photos = repository.loadPhotos(name)
             _uiState.update { it.copy(photos = photos, isLoading = false) }

@@ -91,6 +91,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.DrawableImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
+import coil3.decode.BitmapFactoryDecoder
 import kotlin.math.abs
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -352,7 +353,16 @@ internal fun StaticGalleryImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop
 ) {
-    val painter = rememberAsyncImagePainter(model = uri)
+    // BitmapFactoryDecoder decodes the first frame only: GIF/animated WebP can
+    // never animate here (the stop() below is just belt-and-braces).
+    val context = LocalContext.current
+    val request = remember(uri) {
+        ImageRequest.Builder(context)
+            .data(uri)
+            .decoderFactory(BitmapFactoryDecoder.Factory())
+            .build()
+    }
+    val painter = rememberAsyncImagePainter(model = request)
     val state = painter.state
     LaunchedEffect(state) {
         ((state as? AsyncImagePainter.State.Success)?.result?.image as? DrawableImage)
