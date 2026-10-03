@@ -71,9 +71,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -604,6 +606,20 @@ private fun DevicePhotoViewer(
                     }
                     // This photo's own pan (resets with every zoom-out via zoomEpoch).
                     var zoomOffset by remember(photo.id, zoomEpoch) { mutableStateOf(Offset.Zero) }
+                    // Base height for layout growth: when zoomed, this item occupies
+                    // zoomScale x space, pushing neighbors — the photo truly fills more screen.
+                    var baseHeightPx by remember(photo.id) { mutableIntStateOf(0) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (zoomScale > 1f && baseHeightPx > 0) {
+                                    Modifier.height(with(density) { (baseHeightPx * zoomScale).toDp() })
+                                } else {
+                                    Modifier
+                                }
+                            )
+                    ) {
                     Image(
                         painter = painter,
                         contentDescription = photo.name,
@@ -611,12 +627,16 @@ private fun DevicePhotoViewer(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color.DarkGray)
+                            .onSizeChanged { baseHeightPx = it.height }
                             // Clip to this item: a zoomed photo must never bleed
                             // into its neighbors.
                             .clipToBounds()
                             .graphicsLayer {
                                 scaleX = zoomScale
                                 scaleY = zoomScale
+                                // Grow downward from the top edge so the visual
+                                // exactly fills the grown layout above.
+                                transformOrigin = TransformOrigin(0.5f, 0f)
                                 translationX = zoomOffset.x
                                 translationY = zoomOffset.y
                             }
@@ -655,6 +675,7 @@ private fun DevicePhotoViewer(
                                 }
                             }
                     )
+                    }
                 }
             }
             // Small side counter, plain text, no background — e.g. 23/100.
