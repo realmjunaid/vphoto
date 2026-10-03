@@ -67,6 +67,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -486,8 +487,16 @@ private fun DevicePhotoViewer(
         with(density) { (configuration.screenWidthDp.dp * 2).roundToPx() }.coerceAtLeast(1)
     }
     // Shared zoom: zooming once zooms the whole feed; pan works in all directions.
+    // Pan offset is per-photo (a shared pan would shove every photo sideways).
     var zoomScale by remember { mutableFloatStateOf(1f) }
-    var zoomOffset by remember { mutableStateOf(Offset.Zero) }
+    // Bumped whenever zoom returns to 1x: resets every photo's pan offset.
+    var zoomEpoch by remember { mutableIntStateOf(0) }
+    fun resetZoom() {
+        if (zoomScale > 1f) {
+            zoomScale = 1f
+            zoomEpoch++
+        }
+    }
     // Single tap toggles all chrome (top bar + bottom title) for pure-image viewing.
     var uiVisible by remember { mutableStateOf(true) }
     // Immersive mode: hiding the UI also hides status + navigation bars,
@@ -593,6 +602,8 @@ private fun DevicePhotoViewer(
                             drawable.stop()
                         }
                     }
+                    // This photo's own pan (resets with every zoom-out via zoomEpoch).
+                    var zoomOffset by remember(photo.id, zoomEpoch) { mutableStateOf(Offset.Zero) }
                     Image(
                         painter = painter,
                         contentDescription = photo.name,
@@ -600,6 +611,9 @@ private fun DevicePhotoViewer(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color.DarkGray)
+                            // Clip to this item: a zoomed photo must never bleed
+                            // into its neighbors.
+                            .clipToBounds()
                             .graphicsLayer {
                                 scaleX = zoomScale
                                 scaleY = zoomScale
@@ -607,18 +621,34 @@ private fun DevicePhotoViewer(
                                 translationY = zoomOffset.y
                             }
                             .pointerInput(photo.id) {
+                                detectTapGestures(
+                                    onDoubleTap = {
+                                        // Double-tap toggles 1x / 2.5x; always exits zoom cleanly.
+                                        if (zoomScale > 1f) {
+                                            resetZoom()
+                                        } else {
+                                            zoomScale = 2.5f
+                                        }
+                                    }
+                                )
+                            }
+                            .pointerInput(photo.id, zoomEpoch) {
                                 awaitPointerEventScope {
                                     while (true) {
                                         val event = awaitPointerEvent()
-                                        // Two fingers only: pinch-zoom the whole feed + pan.
+                                        // Two fingers only: pinch-zoom the whole feed + pan this photo.
                                         // Single finger is never consumed here, so scrolling
                                         // stays alive even mid-zoom and while zoomed.
                                         if (event.changes.size >= 2) {
                                             val zoom = event.calculateZoom()
                                             val pan = event.calculatePan()
-                                            zoomScale = (zoomScale * zoom).coerceIn(1f, 5f)
-                                            zoomOffset =
-                                                if (zoomScale > 1f) zoomOffset + pan else Offset.Zero
+                                            val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                                            if (newScale <= 1f) {
+                                                resetZoom()
+                                            } else {
+                                                zoomScale = newScale
+                                                zoomOffset += pan
+                                            }
                                             event.changes.forEach { it.consume() }
                                         }
                                     }
