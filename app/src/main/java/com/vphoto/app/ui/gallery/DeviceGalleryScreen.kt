@@ -88,7 +88,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.DrawableImage
-import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
 import kotlin.math.abs
@@ -309,6 +308,31 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
     }
 }
 
+/**
+ * A thumbnail that never animates: GIF/animated WebP stays frozen on its first
+ * frame (only the full-view middle image plays). Saves battery in grids.
+ */
+@Composable
+private fun StaticGalleryImage(
+    uri: android.net.Uri,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop
+) {
+    val painter = rememberAsyncImagePainter(model = uri)
+    val state = painter.state
+    LaunchedEffect(state) {
+        ((state as? AsyncImagePainter.State.Success)?.result?.image as? DrawableImage)
+            ?.drawable?.let { (it as? Animatable)?.stop() }
+    }
+    Image(
+        painter = painter,
+        contentDescription = contentDescription,
+        contentScale = contentScale,
+        modifier = modifier
+    )
+}
+
 @Composable
 private fun EmptyState(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -350,8 +374,8 @@ private fun AlbumGrid(
                     .padding(12.dp)
             ) {
                 if (allPhotosCoverUri != null) {
-                    AsyncImage(
-                        model = allPhotosCoverUri,
+                    StaticGalleryImage(
+                        uri = allPhotosCoverUri,
                         contentDescription = "All Photos",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -397,8 +421,8 @@ private fun AlbumGrid(
                     .clickable(onClick = { onAlbumClick(album) })
                     .padding(12.dp)
             ) {
-                AsyncImage(
-                    model = album.coverUri,
+                StaticGalleryImage(
+                    uri = album.coverUri,
                     contentDescription = album.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -441,8 +465,8 @@ private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit)
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         items(photos.size, key = { photos[it].id }) { index ->
-            AsyncImage(
-                model = photos[index].uri,
+            StaticGalleryImage(
+                uri = photos[index].uri,
                 contentDescription = photos[index].name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
