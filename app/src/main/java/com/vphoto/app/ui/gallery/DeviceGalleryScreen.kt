@@ -642,7 +642,7 @@ private fun DevicePhotoViewer(
                                         if (event.changes.size >= 2) {
                                             val zoom = event.calculateZoom()
                                             val pan = event.calculatePan()
-                                            val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                                            val newScale = (zoomScale * zoom).coerceIn(1f, 10f)
                                             if (newScale <= 1f) {
                                                 resetZoom()
                                             } else {
