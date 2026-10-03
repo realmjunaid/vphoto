@@ -95,6 +95,7 @@ import kotlin.math.abs
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.size.Dimension
+import coil3.size.Precision
 import com.vphoto.app.data.gallery.DeviceAlbum
 import com.vphoto.app.data.gallery.DevicePhotoRow
 import com.vphoto.app.data.gallery.hasDeviceGalleryPermission
@@ -681,11 +682,14 @@ private fun DevicePhotoViewer(
                     // Animated formats decode at 1x screen width: every frame is
                     // CPU-decoded, so a lighter decode is what makes playback smooth.
                     // Static photos keep 2x for sharp 10x zooming.
+                    // INEXACT precision forces the fast power-of-2 decode path
+                    // instead of a slow full-size decode + software scale-down.
                     val decodeWidth = if (photo.needsLightDecode) targetWidthPx / 2 else targetWidthPx
                     val request = remember(photo.id, decodeWidth) {
                         ImageRequest.Builder(context)
                             .data(photo.uri)
                             .size(Dimension.Pixels(decodeWidth), Dimension.Undefined)
+                            .precision(Precision.INEXACT)
                             .crossfade(false)
                             .build()
                     }
