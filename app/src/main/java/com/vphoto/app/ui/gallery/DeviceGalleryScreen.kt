@@ -16,8 +16,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,7 +66,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -81,8 +78,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -582,8 +577,7 @@ private fun FeedVideoItem(
     uiVisible: Boolean,
     exoPlayer: ExoPlayer,
     videoAspects: MutableMap<Long, Float>,
-    onTogglePlay: () -> Unit,
-    onTapChrome: () -> Unit
+    onTogglePlay: () -> Unit
 ) {
     val aspect = videoAspects[photo.id] ?: (16f / 9f)
     Box(
@@ -637,18 +631,15 @@ private fun FeedVideoItem(
             onRelease = { playerView -> playerView.player = null },
             modifier = Modifier.fillMaxSize()
         )
-        // Transparent tap layer above the player (but below the button):
-        // Android views swallow touches, so without this, taps on a video
-        // never reach the feed's tap handling.
+        // Transparent tap layer above the player (Android views swallow touches,
+        // so without this, taps on a video never toggle playback).
+        // Double-tap anywhere toggles the chrome via the feed's own detector.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(photo.id) {
                     detectTapGestures(
-                        onTap = {
-                            onTogglePlay()
-                            onTapChrome()
-                        }
+                        onTap = { onTogglePlay() }
                     )
                 }
         )
@@ -706,18 +697,7 @@ private fun DevicePhotoViewer(
     val targetWidthPx = remember(configuration, density) {
         with(density) { (configuration.screenWidthDp.dp * 2).roundToPx() }.coerceAtLeast(1)
     }
-    // Shared zoom: zooming once zooms the whole feed; pan works in all directions.
-    // Pan offset is per-photo (a shared pan would shove every photo sideways).
-    var zoomScale by remember { mutableFloatStateOf(1f) }
-    // Bumped whenever zoom returns to 1x: resets every photo's pan offset.
-    var zoomEpoch by remember { mutableIntStateOf(0) }
-    fun resetZoom() {
-        if (zoomScale > 1f) {
-            zoomScale = 1f
-            zoomEpoch++
-        }
-    }
-    // Single tap toggles all chrome (top bar + bottom title) for pure-image viewing.
+    // Double-tap toggles all chrome (top bar + bottom title) for pure-image viewing.
     var uiVisible by remember { mutableStateOf(true) }
     // No autoplay while scrolling: only the explicitly opened/tapped photo plays,
     // like Google Photos. Starts with the photo tapped in the grid.
@@ -826,7 +806,7 @@ private fun DevicePhotoViewer(
                 .padding(padding)
                 .background(Color.Black)
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { uiVisible = !uiVisible })
+                    detectTapGestures(onDoubleTap = { uiVisible = !uiVisible })
                 }
         ) {
             LazyColumn(
@@ -845,8 +825,7 @@ private fun DevicePhotoViewer(
                             uiVisible = uiVisible,
                             exoPlayer = exoPlayer,
                             videoAspects = videoAspects,
-                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index },
-                            onTapChrome = { uiVisible = !uiVisible }
+                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index }
                         )
                     } else {
                     // Animated formats decode at 1x screen width: every frame is
@@ -907,75 +886,18 @@ private fun DevicePhotoViewer(
                     DisposableEffect(directDrawable) {
                         onDispose { (directDrawable as? Animatable)?.stop() }
                     }
-                    // This photo's own pan (resets with every zoom-out via zoomEpoch).
-                    var zoomOffset by remember(photo.id, zoomEpoch) { mutableStateOf(Offset.Zero) }
-                    // Base height for layout growth: when zoomed, this item occupies
-                    // zoomScale x space, pushing neighbors — the photo truly fills more screen.
-                    var baseHeightPx by remember(photo.id) { mutableIntStateOf(0) }
-                    val zoomContentModifier = Modifier
+                    // Tap a photo to play it (GIF/WebP/video). Chrome toggles
+                    // with double-tap only.
+                    val tapModifier = Modifier
                         .fillMaxWidth()
                         .background(Color.DarkGray)
-                        .onSizeChanged { baseHeightPx = it.height }
-                        // Clip to this item: a zoomed photo must never bleed
-                        // into its neighbors.
-                        .clipToBounds()
-                        .graphicsLayer {
-                            scaleX = zoomScale
-                            scaleY = zoomScale
-                            // Grow downward from the top edge so the visual
-                            // exactly fills the grown layout above.
-                            transformOrigin = TransformOrigin(0.5f, 0f)
-                            translationX = zoomOffset.x
-                            translationY = zoomOffset.y
-                        }
                         .pointerInput(photo.id) {
                             detectTapGestures(
-                                onTap = {
-                                    // Tapping a photo plays it (chrome toggles too, same tap).
-                                    playingIndex = index
-                                },
-                                onDoubleTap = {
-                                    // Double-tap toggles 1x / 2.5x; always exits zoom cleanly.
-                                    if (zoomScale > 1f) {
-                                        resetZoom()
-                                    } else {
-                                        zoomScale = 2.5f
-                                    }
-                                }
+                                onTap = { playingIndex = index }
                             )
-                        }
-                        .pointerInput(photo.id, zoomEpoch) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    // Two fingers only: pinch-zoom the whole feed + pan this photo.
-                                    // Single finger is never consumed here, so scrolling
-                                    // stays alive even mid-zoom and while zoomed.
-                                    if (event.changes.size >= 2) {
-                                        val zoom = event.calculateZoom()
-                                        val pan = event.calculatePan()
-                                        val newScale = (zoomScale * zoom).coerceIn(1f, 10f)
-                                        if (newScale <= 1f) {
-                                            resetZoom()
-                                        } else {
-                                            zoomScale = newScale
-                                            zoomOffset += pan
-                                        }
-                                        event.changes.forEach { it.consume() }
-                                    }
-                                }
-                            }
                         }
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(
-                                if (zoomScale > 1f && baseHeightPx > 0) {
-                                    Modifier.height(with(density) { (baseHeightPx * zoomScale).toDp() })
-                                } else {
-                                    Modifier
-                                }
-                            )
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                     if (directDrawable != null) {
                         // Animated GIF/WebP in a platform ImageView: animation
@@ -992,14 +914,14 @@ private fun DevicePhotoViewer(
                                     view.setImageDrawable(directDrawable)
                                 }
                             },
-                            modifier = zoomContentModifier
+                            modifier = tapModifier
                         )
                     } else {
                         Image(
                             painter = painter,
                             contentDescription = photo.name,
                             contentScale = ContentScale.FillWidth,
-                            modifier = zoomContentModifier
+                            modifier = tapModifier
                         )
                     }
                     // Explicit play/pause for animated photos (tapping the GIF itself
