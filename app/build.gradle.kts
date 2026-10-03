@@ -175,6 +175,8 @@ dependencies {
     implementation(libs.coil.compose)
     // Animated WebP/GIF playback (API 28+ via AnimatedImageDecoder, GIF below via GifDecoder).
     implementation(libs.coil.gif)
+    // Video frame thumbnails for the gallery grid.
+    implementation(libs.coil.video)
 
     // Hilt
     implementation(libs.hilt.android)

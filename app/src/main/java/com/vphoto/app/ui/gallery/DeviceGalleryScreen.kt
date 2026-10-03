@@ -40,6 +40,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -125,10 +126,18 @@ fun DeviceGalleryScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var viewerIndex by remember { mutableIntStateOf(-1) }
+    var pagerIndex by remember { mutableIntStateOf(-1) }
+    // Feed = photos, GIFs, static WebPs (continuous, as many as fit).
+    // Videos + animated WebPs open one-by-one in the pager.
+    val feedItems = remember(uiState.photos) { uiState.photos.filter { !it.isPagedItem } }
+    val pagedItems = remember(uiState.photos) { uiState.photos.filter { it.isPagedItem } }
 
     // System back: close viewer first, then go back to album list, then exit screen.
-    BackHandler(enabled = viewerIndex >= 0) { viewerIndex = -1 }
-    BackHandler(enabled = viewerIndex < 0 && uiState.selectedAlbum != null) {
+    BackHandler(enabled = viewerIndex >= 0 || pagerIndex >= 0) {
+        viewerIndex = -1
+        pagerIndex = -1
+    }
+    BackHandler(enabled = viewerIndex < 0 && pagerIndex < 0 && uiState.selectedAlbum != null) {
         viewModel.backToAlbums()
     }
 
@@ -169,7 +178,7 @@ fun DeviceGalleryScreen(
                         )
                         if (uiState.selectedAlbum == null && uiState.totalCount > 0) {
                             Text(
-                                text = "${uiState.totalCount} photos • ${uiState.albums.size} folders (auto)",
+                                text = "${uiState.totalCount} items • ${uiState.albums.size} folders (auto)",
                                 color = TextMuted,
                                 fontSize = 12.sp
                             )
@@ -228,7 +237,7 @@ fun DeviceGalleryScreen(
                 }
                 uiState.selectedAlbum == null -> {
                     if (uiState.albums.isEmpty()) {
-                        EmptyState(message = "No photos found on this device")
+                        EmptyState(message = "No media found on this device")
                     } else {
                         AlbumGrid(
                             albums = uiState.albums,
@@ -241,11 +250,18 @@ fun DeviceGalleryScreen(
                 }
                 else -> {
                     if (uiState.photos.isEmpty()) {
-                        EmptyState(message = "No photos in this folder")
+                        EmptyState(message = "No media in this folder")
                     } else {
                         PhotoGrid(
                             photos = uiState.photos,
-                            onPhotoClick = { viewerIndex = it }
+                            onPhotoClick = { gridIndex ->
+                                val item = uiState.photos.getOrNull(gridIndex) ?: return@PhotoGrid
+                                if (item.isPagedItem) {
+                                    pagerIndex = pagedItems.indexOf(item)
+                                } else {
+                                    viewerIndex = feedItems.indexOf(item)
+                                }
+                            }
                         )
                     }
                 }
@@ -255,17 +271,33 @@ fun DeviceGalleryScreen(
     }
 
     // Full view: continuous vertical feed, overlaid on top of the gallery.
-    if (viewerIndex >= 0 && viewerIndex < uiState.photos.size) {
+    if (viewerIndex >= 0 && viewerIndex < feedItems.size) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Black)
         ) {
             DevicePhotoViewer(
-                photos = uiState.photos,
+                photos = feedItems,
                 startIndex = viewerIndex,
                 title = uiState.selectedAlbum ?: "",
                 onDismiss = { viewerIndex = -1 }
+            )
+        }
+    }
+
+    // One-by-one pager for videos + animated WebPs.
+    if (pagerIndex >= 0 && pagerIndex < pagedItems.size) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Black)
+        ) {
+            PagedMediaViewer(
+                items = pagedItems,
+                startIndex = pagerIndex,
+                title = uiState.selectedAlbum ?: "",
+                onDismiss = { pagerIndex = -1 }
             )
         }
     }
@@ -313,7 +345,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
  * frame (only the full-view middle image plays). Saves battery in grids.
  */
 @Composable
-private fun StaticGalleryImage(
+internal fun StaticGalleryImage(
     uri: android.net.Uri,
     contentDescription: String?,
     modifier: Modifier = Modifier,
@@ -465,18 +497,59 @@ private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit)
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         items(photos.size, key = { photos[it].id }) { index ->
-            StaticGalleryImage(
-                uri = photos[index].uri,
-                contentDescription = photos[index].name,
-                contentScale = ContentScale.Crop,
+            val photo = photos[index]
+            Box(
                 modifier = Modifier
                     .animateItem()
                     .aspectRatio(1f)
                     .background(Color.DarkGray)
                     .clickable { onPhotoClick(index) }
-            )
+            ) {
+                StaticGalleryImage(
+                    uri = photo.uri,
+                    contentDescription = photo.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (photo.isVideo) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(20.dp)
+                    )
+                    if (photo.durationMs > 0) {
+                        Text(
+                            text = formatGridDuration(photo.durationMs),
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 10.sp,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                shadow = Shadow(
+                                    color = Color.Black.copy(alpha = 0.8f),
+                                    offset = Offset(1f, 1f),
+                                    blurRadius = 3f
+                                )
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(4.dp)
+                        )
+                    }
+                }
+            }
         }
     }
+}
+
+private fun formatGridDuration(millis: Long): String {
+    if (millis <= 0) return "0:00"
+    val totalSeconds = millis / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

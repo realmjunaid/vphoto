@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vphoto.app.data.gallery.DevicePhotoRow
 import com.vphoto.app.data.gallery.groupIntoAlbums
+import com.vphoto.app.data.gallery.isAnimatedWebpHeader
 import com.vphoto.app.data.gallery.sortDevicePhotos
 import com.vphoto.app.data.preferences.SortOrder
 import org.junit.Assert.assertEquals
@@ -71,6 +72,20 @@ class DeviceAlbumTest {
         assertEquals(listOf("Camera", "Download"), forward)
         assertEquals(forward, reversed)
         assertEquals(forward, shuffled)
+    }
+
+    @Test
+    fun webpHeader_detectsAnimationFlag() {
+        // RIFF....WEBPVP8X........ + flags byte: bit 1 = animated.
+        fun header(flags: Byte): ByteArray {
+            val riff = "RIFF".toByteArray() + ByteArray(4) + "WEBP".toByteArray() +
+                "VP8X".toByteArray() + ByteArray(4) + byteArrayOf(flags) + ByteArray(3)
+            return riff
+        }
+        assertTrue(isAnimatedWebpHeader(header(0x02)))
+        assertEquals(false, isAnimatedWebpHeader(header(0x00)))
+        assertEquals(false, isAnimatedWebpHeader(ByteArray(10)))
+        assertEquals(false, isAnimatedWebpHeader("RIFFxxxxWEBPNOTVP8X0000".toByteArray()))
     }
 
     @Test

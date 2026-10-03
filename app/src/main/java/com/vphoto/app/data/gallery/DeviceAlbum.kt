@@ -19,16 +19,39 @@ data class DevicePhotoRow(
     val bucketName: String,
     val dateModified: Long,
     val size: Long,
-    val mimeType: String = ""
+    val mimeType: String = "",
+    val durationMs: Long = 0L,
+    val isAnimatedWebp: Boolean = false
 ) {
     /** GIF always animates; WebP may be animated — both decode cheaper for smooth playback. */
     val needsLightDecode: Boolean
         get() = mimeType == "image/gif" || mimeType == "image/webp"
+
+    val isVideo: Boolean
+        get() = mimeType.startsWith("video/")
+
+    /** True for pager items (one-by-one view): videos and animated WebPs. */
+    val isPagedItem: Boolean
+        get() = isVideo || isAnimatedWebp
+}
+
+/**
+ * Sniffs a WebP header for the VP8X animation flag. Animated WebPs always use the
+ * VP8X container with bit 1 of the feature-flags byte (offset 20) set.
+ */
+fun isAnimatedWebpHeader(header: ByteArray): Boolean {
+    if (header.size < 21) return false
+    fun tag(offset: Int, text: String): Boolean =
+        header[offset] == text[0].code.toByte() &&
+            header[offset + 1] == text[1].code.toByte() &&
+            header[offset + 2] == text[2].code.toByte() &&
+            header[offset + 3] == text[3].code.toByte()
+    if (!tag(0, "RIFF") || !tag(8, "WEBP") || !tag(12, "VP8X")) return false
+    return (header[20].toInt() and 0x02) != 0
 }
 
 /**
  * Sorts flat MediaStore rows per the user's Settings order (same options as the viewer).
- * The gallery is images-only, so the video/image-first orders fall back to newest-first.
  */
 fun sortDevicePhotos(rows: List<DevicePhotoRow>, order: SortOrder): List<DevicePhotoRow> =
     when (order) {
@@ -38,8 +61,10 @@ fun sortDevicePhotos(rows: List<DevicePhotoRow>, order: SortOrder): List<DeviceP
         SortOrder.DATE_OLDEST -> rows.sortedBy { it.dateModified }
         SortOrder.SIZE_LARGEST -> rows.sortedByDescending { it.size }
         SortOrder.SIZE_SMALLEST -> rows.sortedBy { it.size }
-        SortOrder.TYPE_VIDEO_FIRST,
-        SortOrder.TYPE_IMAGE_FIRST -> rows.sortedByDescending { it.dateModified }
+        SortOrder.TYPE_VIDEO_FIRST ->
+            rows.sortedWith(compareByDescending<DevicePhotoRow> { it.isVideo }.thenByDescending { it.dateModified })
+        SortOrder.TYPE_IMAGE_FIRST ->
+            rows.sortedWith(compareBy<DevicePhotoRow> { it.isVideo }.thenByDescending { it.dateModified })
     }
 
 /**
