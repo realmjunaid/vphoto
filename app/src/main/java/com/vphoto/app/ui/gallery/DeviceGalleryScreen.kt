@@ -363,9 +363,10 @@ internal fun StaticGalleryImage(
             .build()
     }
     val painter = rememberAsyncImagePainter(model = request)
-    val state = painter.state
-    LaunchedEffect(state) {
-        ((state as? AsyncImagePainter.State.Success)?.result?.image as? DrawableImage)
+    // NOTE: painter.state is a StateFlow — it must be collected, plain reads never update.
+    val painterState by painter.state.collectAsState()
+    LaunchedEffect(painterState) {
+        ((painterState as? AsyncImagePainter.State.Success)?.result?.image as? DrawableImage)
             ?.drawable?.let { (it as? Animatable)?.stop() }
     }
     Image(
@@ -709,7 +710,8 @@ private fun DevicePhotoViewer(
                             .build()
                     }
                     val painter = rememberAsyncImagePainter(model = request)
-                    val painterState = painter.state
+                    // NOTE: painter.state is a StateFlow — it must be collected.
+                    val painterState by painter.state.collectAsState()
                     // Only the opened/tapped photo plays; scrolling never auto-starts others.
                     val isPlaying = index == playingIndex
                     LaunchedEffect(painterState, isPlaying) {
