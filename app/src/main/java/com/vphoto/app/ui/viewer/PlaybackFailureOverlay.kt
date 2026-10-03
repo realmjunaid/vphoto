@@ -66,7 +66,7 @@ fun PlaybackFailureOverlay(
             Button(
                 onClick = onRetry,
                 modifier = retryModifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Violet600, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Violet600, contentColor = Color.Black),
             ) {
                 Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.size(8.dp))

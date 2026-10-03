@@ -3,7 +3,7 @@
     <!-- Splash screen theme -->
     <style name="Theme.VPhoto.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/vphoto_logo_fg</item>
         <item name="windowSplashScreenAnimationDuration">800</item>
         <item name="postSplashScreenTheme">@style/Theme.VPhoto</item>
     </style>

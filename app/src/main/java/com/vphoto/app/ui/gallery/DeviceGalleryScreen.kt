@@ -301,7 +301,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
                 onClick = onGrant,
                 colors = ButtonDefaults.buttonColors(containerColor = Violet500)
             ) {
-                Text("Allow access", color = Color.White)
+                Text("Allow access", color = Color.Black)
             }
         }
     }
@@ -343,7 +343,7 @@ private fun AlbumGrid(
                 modifier = Modifier
                     .animateItem()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF2A1F3D))
+                    .background(Color(0xFF1E1E1E))
                     .clickable(onClick = onAllClick)
                     .padding(12.dp)
             ) {

@@ -330,7 +330,7 @@ private fun SettingsToggleItem(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = Color.Black,
                 checkedTrackColor = Violet500,
                 uncheckedThumbColor = TextMuted,
                 uncheckedTrackColor = SurfaceElevated

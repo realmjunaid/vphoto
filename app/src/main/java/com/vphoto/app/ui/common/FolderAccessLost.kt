@@ -78,7 +78,7 @@ fun FolderAccessLost(
                 colors = ButtonDefaults.buttonColors(containerColor = Violet500),
                 modifier = Modifier.testTag(FolderAccessLostTags.PICK_AGAIN)
             ) {
-                Text("Pick folder again")
+                Text("Pick folder again", color = Color.Black)
             }
             if (onBack != null) {
                 Spacer(modifier = Modifier.height(12.dp))

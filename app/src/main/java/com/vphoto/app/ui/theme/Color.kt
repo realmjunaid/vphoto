@@ -2,12 +2,12 @@ package com.vphoto.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary palette - Violet/Purple
-val Violet500 = Color(0xFF8B5CF6)
-val Violet600 = Color(0xFF7C3AED)
-val Violet700 = Color(0xFF6D28D9)
-val Violet400 = Color(0xFFA78BFA)
-val Violet300 = Color(0xFFC4B5FD)
+// Primary palette - monochrome (black & white UI on a black base)
+val Violet500 = Color(0xFFFFFFFF)
+val Violet600 = Color(0xFFE5E5E5)
+val Violet700 = Color(0xFF525252)
+val Violet400 = Color(0xFFD4D4D4)
+val Violet300 = Color(0xFFF5F5F5)
 
 // Backgrounds - AMOLED Dark
 val Black = Color(0xFF000000)
@@ -22,10 +22,10 @@ val TextSecondary = Color(0xFFA3A3A3)
 val TextMuted = Color(0xFF737373)
 val TextDisabled = Color(0xFF525252)
 
-// Functional
-val ErrorRed = Color(0xFFEF4444)
-val SuccessGreen = Color(0xFF22C55E)
-val WarningAmber = Color(0xFFF59E0B)
+// Functional (kept neutral for the monochrome UI)
+val ErrorRed = Color(0xFFE5E5E5)
+val SuccessGreen = Color(0xFFE5E5E5)
+val WarningAmber = Color(0xFFE5E5E5)
 
 // Overlay
 val OverlayBlack = Color(0x80000000)
