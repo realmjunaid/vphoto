@@ -599,6 +599,11 @@ private fun DevicePhotoViewer(
     }
     // Single tap toggles all chrome (top bar + bottom title) for pure-image viewing.
     var uiVisible by remember { mutableStateOf(true) }
+    // No autoplay while scrolling: only the explicitly opened/tapped photo plays,
+    // like Google Photos. Starts with the photo tapped in the grid.
+    var playingIndex by remember {
+        mutableIntStateOf(startIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
+    }
     // Immersive mode: hiding the UI also hides status + navigation bars,
     // so the whole display shows only images. Restored on dismiss.
     val view = LocalView.current
@@ -695,14 +700,14 @@ private fun DevicePhotoViewer(
                     }
                     val painter = rememberAsyncImagePainter(model = request)
                     val painterState = painter.state
-                    val isCentered = index == currentIndex
-                    // Play only the middle image; pause everything else.
-                    LaunchedEffect(painterState, isCentered) {
+                    // Only the opened/tapped photo plays; scrolling never auto-starts others.
+                    val isPlaying = index == playingIndex
+                    LaunchedEffect(painterState, isPlaying) {
                         val drawable = ((painterState as? AsyncImagePainter.State.Success)
                             ?.result?.image as? DrawableImage)
                             ?.drawable as? Animatable
                             ?: return@LaunchedEffect
-                        if (isCentered) {
+                        if (isPlaying) {
                             if (!drawable.isRunning) drawable.start()
                         } else {
                             drawable.stop()
@@ -746,6 +751,10 @@ private fun DevicePhotoViewer(
                             }
                             .pointerInput(photo.id) {
                                 detectTapGestures(
+                                    onTap = {
+                                        // Tapping a photo plays it (chrome toggles too, same tap).
+                                        playingIndex = index
+                                    },
                                     onDoubleTap = {
                                         // Double-tap toggles 1x / 2.5x; always exits zoom cleanly.
                                         if (zoomScale > 1f) {
