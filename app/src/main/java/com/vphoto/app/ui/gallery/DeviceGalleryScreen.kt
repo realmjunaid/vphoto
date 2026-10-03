@@ -605,11 +605,14 @@ private fun DevicePhotoViewer(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-                    // Smooth fade-in on a memory-friendly decode (no crossfade double-buffer).
-                    val request = remember(photo.id, targetWidthPx) {
+                    // Animated formats decode at 1x screen width: every frame is
+                    // CPU-decoded, so a lighter decode is what makes playback smooth.
+                    // Static photos keep 2x for sharp 10x zooming.
+                    val decodeWidth = if (photo.needsLightDecode) targetWidthPx / 2 else targetWidthPx
+                    val request = remember(photo.id, decodeWidth) {
                         ImageRequest.Builder(context)
                             .data(photo.uri)
-                            .size(Dimension.Pixels(targetWidthPx), Dimension.Undefined)
+                            .size(Dimension.Pixels(decodeWidth), Dimension.Undefined)
                             .crossfade(false)
                             .build()
                     }

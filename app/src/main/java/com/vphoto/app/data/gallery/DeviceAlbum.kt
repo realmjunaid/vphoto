@@ -18,8 +18,13 @@ data class DevicePhotoRow(
     val name: String,
     val bucketName: String,
     val dateModified: Long,
-    val size: Long
-)
+    val size: Long,
+    val mimeType: String = ""
+) {
+    /** GIF always animates; WebP may be animated — both decode cheaper for smooth playback. */
+    val needsLightDecode: Boolean
+        get() = mimeType == "image/gif" || mimeType == "image/webp"
+}
 
 /**
  * Sorts flat MediaStore rows per the user's Settings order (same options as the viewer).

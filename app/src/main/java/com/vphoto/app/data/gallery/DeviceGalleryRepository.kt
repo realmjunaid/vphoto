@@ -50,7 +50,8 @@ class DeviceGalleryRepository @Inject constructor(
             MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Images.Media.DATE_MODIFIED,
-            MediaStore.Images.Media.SIZE
+            MediaStore.Images.Media.SIZE,
+            MediaStore.Images.Media.MIME_TYPE
         )
         val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
         try {
@@ -60,6 +61,7 @@ class DeviceGalleryRepository @Inject constructor(
                 val bucketCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
                 val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
+                val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
                     val uri = ContentUris.withAppendedId(collection, id)
@@ -70,7 +72,8 @@ class DeviceGalleryRepository @Inject constructor(
                             name = cursor.getString(nameCol) ?: "Image",
                             bucketName = cursor.getString(bucketCol)?.takeIf { it.isNotBlank() } ?: "Unknown",
                             dateModified = cursor.getLong(dateCol),
-                            size = try { cursor.getLong(sizeCol) } catch (_: Exception) { 0L }
+                            size = try { cursor.getLong(sizeCol) } catch (_: Exception) { 0L },
+                            mimeType = cursor.getString(mimeCol) ?: ""
                         )
                     )
                 }
