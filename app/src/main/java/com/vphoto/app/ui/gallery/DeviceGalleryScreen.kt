@@ -94,7 +94,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.DrawableImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
-import coil3.compose.rememberDrawablePainter
+import androidx.compose.ui.viewinterop.AndroidView
 import coil3.decode.BitmapFactoryDecoder
 import kotlin.math.abs
 import coil3.request.ImageRequest
@@ -760,16 +760,65 @@ private fun DevicePhotoViewer(
                     DisposableEffect(directDrawable) {
                         onDispose { (directDrawable as? Animatable)?.stop() }
                     }
-                    val displayPainter = if (directDrawable != null) {
-                        rememberDrawablePainter(directDrawable!!)
-                    } else {
-                        painter
-                    }
                     // This photo's own pan (resets with every zoom-out via zoomEpoch).
                     var zoomOffset by remember(photo.id, zoomEpoch) { mutableStateOf(Offset.Zero) }
                     // Base height for layout growth: when zoomed, this item occupies
                     // zoomScale x space, pushing neighbors — the photo truly fills more screen.
                     var baseHeightPx by remember(photo.id) { mutableIntStateOf(0) }
+                    val zoomContentModifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.DarkGray)
+                        .onSizeChanged { baseHeightPx = it.height }
+                        // Clip to this item: a zoomed photo must never bleed
+                        // into its neighbors.
+                        .clipToBounds()
+                        .graphicsLayer {
+                            scaleX = zoomScale
+                            scaleY = zoomScale
+                            // Grow downward from the top edge so the visual
+                            // exactly fills the grown layout above.
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                            translationX = zoomOffset.x
+                            translationY = zoomOffset.y
+                        }
+                        .pointerInput(photo.id) {
+                            detectTapGestures(
+                                onTap = {
+                                    // Tapping a photo plays it (chrome toggles too, same tap).
+                                    playingIndex = index
+                                },
+                                onDoubleTap = {
+                                    // Double-tap toggles 1x / 2.5x; always exits zoom cleanly.
+                                    if (zoomScale > 1f) {
+                                        resetZoom()
+                                    } else {
+                                        zoomScale = 2.5f
+                                    }
+                                }
+                            )
+                        }
+                        .pointerInput(photo.id, zoomEpoch) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    // Two fingers only: pinch-zoom the whole feed + pan this photo.
+                                    // Single finger is never consumed here, so scrolling
+                                    // stays alive even mid-zoom and while zoomed.
+                                    if (event.changes.size >= 2) {
+                                        val zoom = event.calculateZoom()
+                                        val pan = event.calculatePan()
+                                        val newScale = (zoomScale * zoom).coerceIn(1f, 10f)
+                                        if (newScale <= 1f) {
+                                            resetZoom()
+                                        } else {
+                                            zoomScale = newScale
+                                            zoomOffset += pan
+                                        }
+                                        event.changes.forEach { it.consume() }
+                                    }
+                                }
+                            }
+                        }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -781,65 +830,31 @@ private fun DevicePhotoViewer(
                                 }
                             )
                     ) {
-                    Image(
-                        painter = displayPainter,
-                        contentDescription = photo.name,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.DarkGray)
-                            .onSizeChanged { baseHeightPx = it.height }
-                            // Clip to this item: a zoomed photo must never bleed
-                            // into its neighbors.
-                            .clipToBounds()
-                            .graphicsLayer {
-                                scaleX = zoomScale
-                                scaleY = zoomScale
-                                // Grow downward from the top edge so the visual
-                                // exactly fills the grown layout above.
-                                transformOrigin = TransformOrigin(0.5f, 0f)
-                                translationX = zoomOffset.x
-                                translationY = zoomOffset.y
-                            }
-                            .pointerInput(photo.id) {
-                                detectTapGestures(
-                                    onTap = {
-                                        // Tapping a photo plays it (chrome toggles too, same tap).
-                                        playingIndex = index
-                                    },
-                                    onDoubleTap = {
-                                        // Double-tap toggles 1x / 2.5x; always exits zoom cleanly.
-                                        if (zoomScale > 1f) {
-                                            resetZoom()
-                                        } else {
-                                            zoomScale = 2.5f
-                                        }
-                                    }
-                                )
-                            }
-                            .pointerInput(photo.id, zoomEpoch) {
-                                awaitPointerEventScope {
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        // Two fingers only: pinch-zoom the whole feed + pan this photo.
-                                        // Single finger is never consumed here, so scrolling
-                                        // stays alive even mid-zoom and while zoomed.
-                                        if (event.changes.size >= 2) {
-                                            val zoom = event.calculateZoom()
-                                            val pan = event.calculatePan()
-                                            val newScale = (zoomScale * zoom).coerceIn(1f, 10f)
-                                            if (newScale <= 1f) {
-                                                resetZoom()
-                                            } else {
-                                                zoomScale = newScale
-                                                zoomOffset += pan
-                                            }
-                                            event.changes.forEach { it.consume() }
-                                        }
-                                    }
+                    if (directDrawable != null) {
+                        // Animated GIF/WebP in a platform ImageView: animation
+                        // callbacks are native, so playback just works.
+                        AndroidView(
+                            factory = { ctx ->
+                                android.widget.ImageView(ctx).apply {
+                                    adjustViewBounds = true
+                                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                                 }
-                            }
-                    )
+                            },
+                            update = { view ->
+                                if (view.drawable !== directDrawable) {
+                                    view.setImageDrawable(directDrawable)
+                                }
+                            },
+                            modifier = zoomContentModifier
+                        )
+                    } else {
+                        Image(
+                            painter = painter,
+                            contentDescription = photo.name,
+                            contentScale = ContentScale.FillWidth,
+                            modifier = zoomContentModifier
+                        )
+                    }
                     }
                 }
             }
