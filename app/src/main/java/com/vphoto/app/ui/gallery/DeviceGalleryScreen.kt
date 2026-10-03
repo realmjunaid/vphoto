@@ -253,6 +253,7 @@ fun DeviceGalleryScreen(
                             albums = uiState.albums,
                             totalCount = uiState.totalCount,
                             allPhotosCoverUri = uiState.allPhotosCoverUri,
+                            allPhotosCoverIsVideo = uiState.allPhotosCoverIsVideo,
                             onAlbumClick = { viewModel.openAlbum(it.name) },
                             onAllClick = { viewModel.openAlbum(com.vphoto.app.data.gallery.DeviceGalleryRepository.ALL_PHOTOS_ALBUM) }
                         )
@@ -336,15 +337,17 @@ internal fun StaticGalleryImage(
     uri: android.net.Uri,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Crop
+    contentScale: ContentScale = ContentScale.Crop,
+    isVideo: Boolean = false
 ) {
-    // BitmapFactoryDecoder decodes the first frame only: GIF/animated WebP can
-    // never animate here (the stop() below is just belt-and-braces).
+    // Images: BitmapFactoryDecoder decodes the first frame only, so GIF/animated
+    // WebP can never animate here (the stop() below is just belt-and-braces).
+    // Videos: the default chain decodes a frame thumbnail via VideoFrameDecoder.
     val context = LocalContext.current
-    val request = remember(uri) {
+    val request = remember(uri, isVideo) {
         ImageRequest.Builder(context)
             .data(uri)
-            .decoderFactory(BitmapFactoryDecoder.Factory())
+            .apply { if (!isVideo) decoderFactory(BitmapFactoryDecoder.Factory()) }
             .build()
     }
     val painter = rememberAsyncImagePainter(model = request)
@@ -383,6 +386,7 @@ private fun AlbumGrid(
     albums: List<DeviceAlbum>,
     totalCount: Int,
     allPhotosCoverUri: android.net.Uri?,
+    allPhotosCoverIsVideo: Boolean = false,
     onAlbumClick: (DeviceAlbum) -> Unit,
     onAllClick: () -> Unit
 ) {
@@ -405,6 +409,7 @@ private fun AlbumGrid(
                 if (allPhotosCoverUri != null) {
                     StaticGalleryImage(
                         uri = allPhotosCoverUri,
+                        isVideo = allPhotosCoverIsVideo,
                         contentDescription = "All Photos",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -452,6 +457,7 @@ private fun AlbumGrid(
             ) {
                 StaticGalleryImage(
                     uri = album.coverUri,
+                    isVideo = album.coverIsVideo,
                     contentDescription = album.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -504,6 +510,7 @@ private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit)
             ) {
                 StaticGalleryImage(
                     uri = photo.uri,
+                    isVideo = photo.isVideo,
                     contentDescription = photo.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -589,6 +596,14 @@ private fun FeedVideoItem(
             .background(Color.Black)
             .clipToBounds()
     ) {
+        // Frame thumbnail underneath (also covers the pre-play state).
+        StaticGalleryImage(
+            uri = photo.uri,
+            isVideo = true,
+            contentDescription = photo.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
         if (!isPlaying) {
             Icon(
                 imageVector = Icons.Filled.PlayArrow,

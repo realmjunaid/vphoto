@@ -25,6 +25,7 @@ data class DeviceGalleryUiState(
     val totalCount: Int = 0,
     /** Cover for the "All Photos" tile: the single newest photo on device. */
     val allPhotosCoverUri: Uri? = null,
+    val allPhotosCoverIsVideo: Boolean = false,
     /** Pull-to-refresh spinner (content stays visible underneath). */
     val isRefreshing: Boolean = false
 )
@@ -67,7 +68,8 @@ class DeviceGalleryViewModel @Inject constructor(
     private suspend fun reload() {
         val albums = repository.loadAlbums()
         val total = albums.sumOf { it.count }
-        val allCover = albums.maxByOrNull { it.latestDateModified }?.coverUri
+        val allCoverAlbum = albums.maxByOrNull { it.latestDateModified }
+        val allCover = allCoverAlbum?.coverUri
         // Keep the open album in sync (e.g. after a refresh).
         val selected = _uiState.value.selectedAlbum
         val photos = if (selected != null) repository.loadPhotos(selected) else emptyList()
@@ -79,6 +81,7 @@ class DeviceGalleryViewModel @Inject constructor(
                 isRefreshing = false,
                 totalCount = total,
                 allPhotosCoverUri = allCover,
+                allPhotosCoverIsVideo = allCoverAlbum?.coverIsVideo ?: false,
                 hasPermission = true
             )
         }

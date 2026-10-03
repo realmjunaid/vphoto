@@ -8,7 +8,8 @@ data class DeviceAlbum(
     val name: String,
     val count: Int,
     val coverUri: Uri,
-    val latestDateModified: Long = 0L
+    val latestDateModified: Long = 0L,
+    val coverIsVideo: Boolean = false
 )
 
 /** One image row from MediaStore. Pure data so grouping is unit-testable. */
@@ -81,7 +82,8 @@ fun groupIntoAlbums(rows: List<DevicePhotoRow>): List<DeviceAlbum> {
                 name = bucket,
                 count = photos.size,
                 coverUri = latest?.uri ?: photos.first().uri,
-                latestDateModified = latest?.dateModified ?: 0L
+                latestDateModified = latest?.dateModified ?: 0L,
+                coverIsVideo = latest?.isVideo ?: false
             )
         }
         .sortedByDescending { it.latestDateModified }
