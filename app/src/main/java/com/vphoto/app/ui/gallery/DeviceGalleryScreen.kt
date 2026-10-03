@@ -582,7 +582,8 @@ private fun FeedVideoItem(
     uiVisible: Boolean,
     exoPlayer: ExoPlayer,
     videoAspects: MutableMap<Long, Float>,
-    onTogglePlay: () -> Unit
+    onTogglePlay: () -> Unit,
+    onTapChrome: () -> Unit
 ) {
     val aspect = videoAspects[photo.id] ?: (16f / 9f)
     Box(
@@ -591,9 +592,6 @@ private fun FeedVideoItem(
             .aspectRatio(aspect)
             .background(Color.Black)
             .clipToBounds()
-            .pointerInput(photo.id) {
-                detectTapGestures(onTap = { onTogglePlay() })
-            }
     ) {
         if (!isPlaying) {
             Icon(
@@ -638,6 +636,21 @@ private fun FeedVideoItem(
             },
             onRelease = { playerView -> playerView.player = null },
             modifier = Modifier.fillMaxSize()
+        )
+        // Transparent tap layer above the player (but below the button):
+        // Android views swallow touches, so without this, taps on a video
+        // never reach the feed's tap handling.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(photo.id) {
+                    detectTapGestures(
+                        onTap = {
+                            onTogglePlay()
+                            onTapChrome()
+                        }
+                    )
+                }
         )
         if (uiVisible) {
             IconButton(
@@ -832,7 +845,8 @@ private fun DevicePhotoViewer(
                             uiVisible = uiVisible,
                             exoPlayer = exoPlayer,
                             videoAspects = videoAspects,
-                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index }
+                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index },
+                            onTapChrome = { uiVisible = !uiVisible }
                         )
                     } else {
                     // Animated formats decode at 1x screen width: every frame is
