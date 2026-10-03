@@ -52,6 +52,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -199,11 +200,14 @@ fun DeviceGalleryScreen(
             )
         }
     ) { padding ->
-        Box(
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = { viewModel.pullRefresh() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            Box(modifier = Modifier.fillMaxSize()) {
             when {
                 !uiState.hasPermission && !uiState.isLoading -> PermissionPrompt(
                     onGrant = { permissionLauncher.launch(viewModel.requiredPermissions()) }
@@ -241,6 +245,7 @@ fun DeviceGalleryScreen(
                         )
                     }
                 }
+            }
             }
         }
     }

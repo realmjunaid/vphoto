@@ -7,8 +7,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
+import com.vphoto.app.data.preferences.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,7 +30,8 @@ fun hasDeviceGalleryPermission(context: Context): Boolean =
 
 @Singleton
 class DeviceGalleryRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val appPreferences: AppPreferences
 ) {
     fun hasPermission(): Boolean = hasDeviceGalleryPermission(context)
 
@@ -77,7 +80,8 @@ class DeviceGalleryRepository @Inject constructor(
         } catch (_: Exception) {
             return@withContext emptyList()
         }
-        rows
+        // Respect the Settings sort order (default A–Z); the query itself stays newest-first.
+        sortDevicePhotos(rows, appPreferences.settings.first().sortOrder)
     }
 
     /** Folder-wise albums (Google Photos style). */

@@ -23,7 +23,9 @@ data class DeviceGalleryUiState(
     val hasPermission: Boolean = false,
     val totalCount: Int = 0,
     /** Cover for the "All Photos" tile: the single newest photo on device. */
-    val allPhotosCoverUri: Uri? = null
+    val allPhotosCoverUri: Uri? = null,
+    /** Pull-to-refresh spinner (content stays visible underneath). */
+    val isRefreshing: Boolean = false
 )
 
 @HiltViewModel
@@ -49,24 +51,35 @@ class DeviceGalleryViewModel @Inject constructor(
     }
 
     fun loadAlbums() {
-        _uiState.update { it.copy(isLoading = true) }
-        viewModelScope.launch {
-            val albums = repository.loadAlbums()
-            val total = albums.sumOf { it.count }
-            val allCover = albums.maxByOrNull { it.latestDateModified }?.coverUri
-            // Keep the open album in sync (e.g. after a refresh).
-            val selected = _uiState.value.selectedAlbum
-            val photos = if (selected != null) repository.loadPhotos(selected) else emptyList()
-            _uiState.update {
-                it.copy(
-                    albums = albums,
-                    photos = photos,
-                    isLoading = false,
-                    totalCount = total,
-                    allPhotosCoverUri = allCover,
-                    hasPermission = true
-                )
-            }
+        _uiState.update { it.copy(isLoading = true, isRefreshing = false) }
+        viewModelScope.launch { reload() }
+    }
+
+    /** Pull-to-refresh: picks up new photos/folders without the full loading screen. */
+    fun pullRefresh() {
+        val state = _uiState.value
+        if (state.isLoading || state.isRefreshing || !state.hasPermission) return
+        _uiState.update { it.copy(isRefreshing = true) }
+        viewModelScope.launch { reload() }
+    }
+
+    private suspend fun reload() {
+        val albums = repository.loadAlbums()
+        val total = albums.sumOf { it.count }
+        val allCover = albums.maxByOrNull { it.latestDateModified }?.coverUri
+        // Keep the open album in sync (e.g. after a refresh).
+        val selected = _uiState.value.selectedAlbum
+        val photos = if (selected != null) repository.loadPhotos(selected) else emptyList()
+        _uiState.update {
+            it.copy(
+                albums = albums,
+                photos = photos,
+                isLoading = false,
+                isRefreshing = false,
+                totalCount = total,
+                allPhotosCoverUri = allCover,
+                hasPermission = true
+            )
         }
     }
 
