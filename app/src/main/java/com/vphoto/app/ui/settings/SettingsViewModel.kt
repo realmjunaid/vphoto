@@ -6,9 +6,6 @@ import com.vphoto.app.data.preferences.AppPreferences
 import com.vphoto.app.data.preferences.AppSettings
 import com.vphoto.app.data.preferences.AspectRatioMode
 import com.vphoto.app.data.preferences.SortOrder
-import com.vphoto.app.util.update.CheckStatus
-import com.vphoto.app.util.update.UpdateCoordinator
-import com.vphoto.app.util.update.UpdateUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,19 +16,10 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val appPreferences: AppPreferences,
-    val updateCoordinator: UpdateCoordinator
 ) : ViewModel() {
 
     val settings: StateFlow<AppSettings> = appPreferences.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
-
-    /** The "Check for Updates" row: idle, checking, up to date, or failed (never shown as up to date). */
-    val checkStatus: StateFlow<CheckStatus> = updateCoordinator.checkStatus
-
-    /** The update dialog (shared with Home). */
-    val updateState: StateFlow<UpdateUiState> = updateCoordinator.state
-
-    fun checkForUpdates() = updateCoordinator.check()
 
     fun setLoopVideos(value: Boolean) {
         viewModelScope.launch { appPreferences.updateLoopVideos(value) }

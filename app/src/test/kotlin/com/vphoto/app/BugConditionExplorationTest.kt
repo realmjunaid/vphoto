@@ -57,8 +57,6 @@ import java.util.concurrent.TimeUnit
  *   taps from the grid pop Home too, leaving an empty back stack `[]`.
  * - `prefs_corruptFileFallsBack` (C12): `settings.first()` throws
  *   `androidx.datastore.core.CorruptionException: Unable to parse preferences proto.`
- * - `update_pendingApkKept` (C19): `vphoto_update.apk` (pending 1.3.0 / versionCode 14 over
- *   installed 13) is deleted by `UpdateManager.cleanupOldUpdateApks` on startup.
  * - C17 (manual): `./gradlew :app:signingReport` shows variant `release` with
  *   Config `debug`, Store `~/.android/debug.keystore`, Alias `AndroidDebugKey`, the same as `debug`.
  *
@@ -269,22 +267,5 @@ class BugConditionExplorationTest {
             result.isSuccess,
         )
         assertEquals(AppSettings(), result.getOrNull())
-    }
-
-    // ─── Update ─────────────────────────────────────────────────────────────────────────
-
-    /** C19: a pending update newer than the installed version must survive startup cleanup. */
-    @Test
-    fun update_pendingApkKept() {
-        val installed = Adapters.installedVersionCode
-        val pending = Adapters.stagePendingUpdate(context, versionCode = installed + 1, versionName = "1.3.0")
-        assertTrue("setup: pending APK was not written", pending.exists())
-
-        Adapters.runStartupUpdateCleanup(context)
-
-        assertTrue(
-            "startup cleanup deleted the pending update ${pending.name} (versionCode ${installed + 1} > installed $installed)",
-            pending.exists(),
-        )
     }
 }

@@ -19,7 +19,6 @@ import coil3.fetch.Fetcher
 import coil3.request.ImageRequest
 import coil3.request.Options
 import coil3.size.Size
-import com.vphoto.app.BuildConfig
 import com.vphoto.app.data.model.MediaItem
 import com.vphoto.app.data.preferences.AppPreferences
 import com.vphoto.app.data.preferences.SortOrder
@@ -35,10 +34,6 @@ import com.vphoto.app.preservation.LegacyOracles
 import com.vphoto.app.ui.viewer.FolderGridViewModel
 import com.vphoto.app.ui.viewer.ReelsViewerViewModel
 import com.vphoto.app.ui.viewer.landscape.LandscapeVideoViewerViewModel
-import com.vphoto.app.util.UpdateCheckMapping
-import com.vphoto.app.util.UpdateCheckResult
-import com.vphoto.app.util.update.PendingUpdate
-import com.vphoto.app.util.update.UpdateFiles
 import com.vphoto.app.util.thumbnail.ThumbnailWorkGate
 import com.vphoto.app.util.thumbnail.videoThumbnailRequest
 import kotlinx.coroutines.CoroutineScope
@@ -289,31 +284,6 @@ object Adapters {
 
     // ─── update_ (fix group 7) ──────────────────────────────────────────────────────────
 
-    val installedVersionCode: Int get() = BuildConfig.VERSION_CODE
-
-    /**
-     * Leaves a downloaded, validated update APK for [versionCode] where the app keeps a pending
-     * update. Was (unfixed): `vphoto_update.apk` in `externalCacheDir ?: cacheDir`. Now (7.4):
-     * `cacheDir/updates/vphoto-<v>.apk` plus its `pending.json` sidecar, through `UpdateFiles`
-     * (the coordinator writes the sidecar right after validation passes).
-     */
-    fun stagePendingUpdate(context: Context, versionCode: Int, versionName: String): File {
-        val files = UpdateFiles(context)
-        files.dir.mkdirs()
-        val apk = files.apkFileFor(versionName).apply {
-            writeBytes("fake apk for $versionName ($versionCode)".toByteArray())
-        }
-        files.writePending(
-            PendingUpdate(versionName, versionCode.toLong(), apk.length(), "VPhoto $versionName", "", apk.name)
-        )
-        return apk
-    }
-
-    /** Was (unfixed): `UpdateManager.cleanupOldUpdateApks`. Now (7.4): what `VPhotoApp.onCreate` runs. */
-    fun runStartupUpdateCleanup(context: Context) {
-        UpdateFiles(context).deleteStale(BuildConfig.VERSION_CODE.toLong())
-    }
-
     // ═══ Preservation (Property 2, task 3) ═══════════════════════════════════════════════
     //
     // Adapters for `com.vphoto.app.preservation.*`. Each says whether it calls REAL app code or
@@ -532,26 +502,4 @@ object Adapters {
             store.clear()
         }
     }
-
-    // ─── update_ offer (3.13) ───────────────────────────────────────────────────────────
-
-    /** The installed `versionName` the update check compares against. */
-    val installedVersionName: String get() = BuildConfig.VERSION_NAME
-
-    /** REAL. Was `UpdateManager.isNewerVersion`; now (7.2) `UpdateCheckMapping.isNewerVersion`, which the check uses. */
-    fun isNewerVersion(context: Context, remote: String, current: String): Boolean =
-        UpdateCheckMapping.isNewerVersion(remote, current)
-
-    /**
-     * REAL. Was ROUTED (inline in the network-bound `checkForUpdates()`). Now (7.2):
-     * `UpdateCheckMapping.mapCheckResponse(code, emptyMap(), body, current)`, with `Available(info)`
-     * → its fields and every other result (UpToDate / Failed) → null (no dialog).
-     */
-    fun releaseOffer(responseCode: Int, body: String, currentVersionName: String): LegacyOracles.Offer? =
-        when (val r = UpdateCheckMapping.mapCheckResponse(responseCode, emptyMap(), body, currentVersionName)) {
-            is UpdateCheckResult.Available -> with(r.info) {
-                LegacyOracles.Offer(versionName, releaseTitle, releaseNotes, downloadUrl, apkSize)
-            }
-            else -> null
-        }
 }

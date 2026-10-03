@@ -4,7 +4,6 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import com.vphoto.app.data.model.MediaItem
 import com.vphoto.app.data.preferences.SortOrder
-import org.json.JSONObject
 
 /**
  * Property 2: Preservation - the ORIGINAL (unfixed) logic, copied verbatim.
@@ -246,85 +245,5 @@ object LegacyOracles {
         val entries = recentFolders(raw)
         val match = entries.find { it.startsWith("${folderUri}<<>>") }
         return match?.let { parseRecentFolderEntry(it)?.lastIndex } ?: 0
-    }
-
-    // ─── Update offer (UpdateManager) ───────────────────────────────────────────────────
-
-    /** Verbatim `UpdateManager.isNewerVersion`. */
-    fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean {
-        if (remoteVersion.isBlank() || currentVersion.isBlank()) return false
-        val remoteParts = remoteVersion.split(".").mapNotNull { it.toIntOrNull() }
-        val currentParts = currentVersion.split(".").mapNotNull { it.toIntOrNull() }
-
-        val maxLen = maxOf(remoteParts.size, currentParts.size)
-        for (i in 0 until maxLen) {
-            val remote = remoteParts.getOrElse(i) { 0 }
-            val current = currentParts.getOrElse(i) { 0 }
-            if (remote > current) return true
-            if (remote < current) return false
-        }
-        return false
-    }
-
-    /** The offer fields the update dialog shows (`AppUpdateInfo` in the unfixed app). */
-    data class Offer(
-        val versionName: String,
-        val releaseTitle: String,
-        val releaseNotes: String,
-        val downloadUrl: String,
-        val apkSize: Long,
-    )
-
-    /**
-     * Verbatim response handling from `UpdateManager.checkForUpdates`, after the connection:
-     * status code and body → the offer, or null (no dialog). [currentVersionName] stands in for
-     * `BuildConfig.VERSION_NAME`.
-     */
-    fun parseReleaseOffer(responseCode: Int, responseText: String, currentVersionName: String): Offer? {
-        try {
-            if (responseCode != 200) {
-                return null
-            }
-
-            val json = JSONObject(responseText)
-
-            val tagName = json.optString("tag_name", "").removePrefix("v").trim()
-            val releaseTitle = json.optString("name", "New Update Available")
-            val releaseNotes = json.optString("body", "Bug fixes and performance improvements.")
-            val currentVersion = currentVersionName.removePrefix("v").trim()
-
-            if (!isNewerVersion(tagName, currentVersion)) {
-                return null
-            }
-
-            // Find APK in assets
-            val assets = json.optJSONArray("assets") ?: return null
-            var apkUrl: String? = null
-            var apkSize = 0L
-
-            for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                val name = asset.optString("name", "")
-                if (name.endsWith(".apk", ignoreCase = true)) {
-                    apkUrl = asset.optString("browser_download_url")
-                    apkSize = asset.optLong("size", 0L)
-                    break
-                }
-            }
-
-            if (apkUrl.isNullOrBlank()) {
-                return null
-            }
-
-            return Offer(
-                versionName = tagName,
-                releaseTitle = releaseTitle,
-                releaseNotes = releaseNotes,
-                downloadUrl = apkUrl,
-                apkSize = apkSize,
-            )
-        } catch (e: Exception) {
-            return null
-        }
     }
 }

@@ -89,4 +89,4 @@ Issues and pull requests are welcome! For big changes, please open an issue firs
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE). VPhoto is a community rework of [SnapReel](https://github.com/shahriar-ahmed-seam/SnapReel) (also MIT), rebuilt around an automatic offline gallery.
+MIT — see [LICENSE](LICENSE).

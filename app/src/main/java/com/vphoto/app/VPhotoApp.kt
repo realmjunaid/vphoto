@@ -11,7 +11,6 @@ import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import com.vphoto.app.di.ApplicationScope
 import com.vphoto.app.util.thumbnail.VideoThumbnailFetcher
-import com.vphoto.app.util.update.UpdateFiles
 import com.vphoto.app.util.thumbnail.VideoThumbnailKeyer
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -30,15 +29,9 @@ class VPhotoApp : Application(), SingletonImageLoader.Factory {
     @field:ApplicationScope
     lateinit var applicationScope: CoroutineScope
 
-    @Inject
-    lateinit var updateFiles: UpdateFiles
-
     override fun onCreate() {
         super.onCreate()
         applicationScope.launch(Dispatchers.IO) {
-            // Only stale update files go: a validated pending update newer than this version is
-            // kept, so an install interrupted by a process restart can still finish.
-            updateFiles.deleteStale(BuildConfig.VERSION_CODE.toLong())
             // The pre-1.3 thumbnail store (unbounded, keyed on the URI only). Replaced by
             // noBackupFilesDir/video_thumbs.
             File(filesDir, LEGACY_THUMBNAIL_DIR).deleteRecursively()

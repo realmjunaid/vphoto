@@ -5,8 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vphoto.app.data.preferences.AppPreferences
 import com.vphoto.app.data.repository.MediaRepository
-import com.vphoto.app.util.update.UpdateCoordinator
-import com.vphoto.app.util.update.UpdateUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -28,11 +26,7 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val appPreferences: AppPreferences,
     private val mediaRepository: MediaRepository,
-    val updateCoordinator: UpdateCoordinator
 ) : ViewModel() {
-
-    /** The update dialog's state (shared with Settings; the coordinator lives in the app scope). */
-    val updateState: StateFlow<UpdateUiState> = updateCoordinator.state
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -51,9 +45,6 @@ class HomeViewModel @Inject constructor(
                 _uiState.update { it.copy(recentFolders = folders) }
             }
         }
-
-        // Once per process: offer a verified download kept across a restart, else a silent check.
-        updateCoordinator.restorePendingOrCheck()
     }
 
     /** Persists access to a picked folder; `false` if the provider doesn't offer a persistable grant. */
