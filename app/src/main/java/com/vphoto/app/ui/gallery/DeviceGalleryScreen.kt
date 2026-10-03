@@ -5,6 +5,8 @@ import android.graphics.ImageDecoder
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,6 +69,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -97,6 +101,11 @@ import coil3.DrawableImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil3.decode.BitmapFactoryDecoder
 import kotlin.math.abs
 import coil3.request.ImageRequest
@@ -136,18 +145,13 @@ fun DeviceGalleryScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var viewerIndex by remember { mutableIntStateOf(-1) }
-    var pagerIndex by remember { mutableIntStateOf(-1) }
-    // Feed = photos, GIFs, static WebPs (continuous, as many as fit).
-    // Videos + animated WebPs open one-by-one in the pager.
-    val feedItems = remember(uiState.photos) { uiState.photos.filter { !it.isPagedItem } }
-    val pagedItems = remember(uiState.photos) { uiState.photos.filter { it.isPagedItem } }
+    // One continuous feed for everything: photos, GIFs, animated WebPs, videos.
 
     // System back: close viewer first, then go back to album list, then exit screen.
-    BackHandler(enabled = viewerIndex >= 0 || pagerIndex >= 0) {
+    BackHandler(enabled = viewerIndex >= 0) {
         viewerIndex = -1
-        pagerIndex = -1
     }
-    BackHandler(enabled = viewerIndex < 0 && pagerIndex < 0 && uiState.selectedAlbum != null) {
+    BackHandler(enabled = viewerIndex < 0 && uiState.selectedAlbum != null) {
         viewModel.backToAlbums()
     }
 
@@ -264,14 +268,7 @@ fun DeviceGalleryScreen(
                     } else {
                         PhotoGrid(
                             photos = uiState.photos,
-                            onPhotoClick = { gridIndex ->
-                                val item = uiState.photos.getOrNull(gridIndex) ?: return@PhotoGrid
-                                if (item.isPagedItem) {
-                                    pagerIndex = pagedItems.indexOf(item)
-                                } else {
-                                    viewerIndex = feedItems.indexOf(item)
-                                }
-                            }
+                            onPhotoClick = { gridIndex -> viewerIndex = gridIndex }
                         )
                     }
                 }
@@ -280,34 +277,18 @@ fun DeviceGalleryScreen(
         }
     }
 
-    // Full view: continuous vertical feed, overlaid on top of the gallery.
-    if (viewerIndex >= 0 && viewerIndex < feedItems.size) {
+    // Full view: continuous vertical feed with everything, overlaid on the gallery.
+    if (viewerIndex >= 0 && viewerIndex < uiState.photos.size) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Black)
         ) {
             DevicePhotoViewer(
-                photos = feedItems,
+                photos = uiState.photos,
                 startIndex = viewerIndex,
                 title = uiState.selectedAlbum ?: "",
                 onDismiss = { viewerIndex = -1 }
-            )
-        }
-    }
-
-    // One-by-one pager for videos + animated WebPs.
-    if (pagerIndex >= 0 && pagerIndex < pagedItems.size) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Black)
-        ) {
-            PagedMediaViewer(
-                items = pagedItems,
-                startIndex = pagerIndex,
-                title = uiState.selectedAlbum ?: "",
-                onDismiss = { pagerIndex = -1 }
             )
         }
     }
@@ -589,6 +570,96 @@ private fun formatGridDuration(millis: Long): String {
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
 
+/**
+ * One video inside the continuous feed: full-width like every photo, as many
+ * per screen as fit. Tapping binds the shared player and plays; everything
+ * else stays paused. Aspect is learned from the video once it plays.
+ */
+@Composable
+private fun FeedVideoItem(
+    photo: DevicePhotoRow,
+    isPlaying: Boolean,
+    uiVisible: Boolean,
+    exoPlayer: ExoPlayer,
+    videoAspects: MutableMap<Long, Float>,
+    onTogglePlay: () -> Unit
+) {
+    val aspect = videoAspects[photo.id] ?: (16f / 9f)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(aspect)
+            .background(Color.Black)
+            .clipToBounds()
+            .pointerInput(photo.id) {
+                detectTapGestures(onTap = { onTogglePlay() })
+            }
+    ) {
+        if (!isPlaying) {
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = "Play video",
+                tint = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(56.dp)
+            )
+            if (photo.durationMs > 0) {
+                Text(
+                    text = formatGridDuration(photo.durationMs),
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.8f),
+                            offset = Offset(1f, 1f),
+                            blurRadius = 3f
+                        )
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                )
+            }
+        }
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+            },
+            update = { playerView ->
+                playerView.player = if (isPlaying) exoPlayer else null
+            },
+            onRelease = { playerView -> playerView.player = null },
+            modifier = Modifier.fillMaxSize()
+        )
+        if (uiVisible) {
+            IconButton(
+                onClick = onTogglePlay,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 8.dp, bottom = 8.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f))
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DevicePhotoViewer(
@@ -639,6 +710,39 @@ private fun DevicePhotoViewer(
     // like Google Photos. Starts with the photo tapped in the grid.
     var playingIndex by remember {
         mutableIntStateOf(startIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
+    }
+    // One shared player for inline videos: the tapped video binds and plays,
+    // everything else stays paused. Aspect is learned per video once it plays.
+    val videoAspects = remember { mutableStateMapOf<Long, Float>() }
+    var playingVideoId by remember { mutableLongStateOf(-1L) }
+    val exoPlayer = remember(context) { ExoPlayer.Builder(context).build() }
+    DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    videoAspects[playingVideoId] =
+                        videoSize.width.toFloat() / videoSize.height.toFloat()
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+            exoPlayer.stop()
+            exoPlayer.release()
+        }
+    }
+    LaunchedEffect(playingIndex) {
+        val item = photos.getOrNull(playingIndex)
+        if (item?.isVideo == true) {
+            playingVideoId = item.id
+            exoPlayer.setMediaItem(androidx.media3.common.MediaItem.fromUri(item.uri))
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        } else {
+            playingVideoId = -1L
+            exoPlayer.pause()
+        }
     }
     // Immersive mode: hiding the UI also hides status + navigation bars,
     // so the whole display shows only images. Restored on dismiss.
@@ -720,6 +824,17 @@ private fun DevicePhotoViewer(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
+                    val isPlaying = index == playingIndex
+                    if (photo.isVideo) {
+                        FeedVideoItem(
+                            photo = photo,
+                            isPlaying = isPlaying,
+                            uiVisible = uiVisible,
+                            exoPlayer = exoPlayer,
+                            videoAspects = videoAspects,
+                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index }
+                        )
+                    } else {
                     // Animated formats decode at 1x screen width: every frame is
                     // CPU-decoded, so a lighter decode is what makes playback smooth.
                     // Static photos keep 2x for sharp 10x zooming.
@@ -738,7 +853,6 @@ private fun DevicePhotoViewer(
                     // NOTE: painter.state is a StateFlow — it must be collected.
                     val painterState by painter.state.collectAsState()
                     // Only the opened/tapped photo plays; scrolling never auto-starts others.
-                    val isPlaying = index == playingIndex
                     LaunchedEffect(painterState, isPlaying) {
                         val drawable = ((painterState as? AsyncImagePainter.State.Success)
                             ?.result?.image as? DrawableImage)
@@ -894,6 +1008,7 @@ private fun DevicePhotoViewer(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
+                    }
                     }
                     }
                 }
