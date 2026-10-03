@@ -73,7 +73,9 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -89,7 +91,7 @@ import coil3.compose.rememberAsyncImagePainter
 import kotlin.math.abs
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import coil3.size.Size
+import coil3.size.Dimension
 import com.vphoto.app.data.gallery.DeviceAlbum
 import com.vphoto.app.data.gallery.DevicePhotoRow
 import com.vphoto.app.data.gallery.hasDeviceGalleryPermission
@@ -474,8 +476,15 @@ private fun DevicePhotoViewer(
             }?.index ?: 0
         }
     }
-    // Full original resolution: no downsampling, no compression — view as-is.
+    // Decode at 2x screen width (aspect kept): visually identical on-screen,
+    // but a fraction of the memory — this is what makes the feed butter smooth.
+    // Full originals stay untouched in storage; nothing is compressed there.
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val targetWidthPx = remember(configuration, density) {
+        with(density) { (configuration.screenWidthDp.dp * 2).roundToPx() }.coerceAtLeast(1)
+    }
     // Shared zoom: zooming once zooms the whole feed; pan works in all directions.
     var zoomScale by remember { mutableFloatStateOf(1f) }
     var zoomOffset by remember { mutableStateOf(Offset.Zero) }
@@ -555,18 +564,18 @@ private fun DevicePhotoViewer(
         ) {
             LazyColumn(
                 state = listState,
-                // While zoomed, drags pan the photo instead of scrolling the feed.
-                userScrollEnabled = zoomScale <= 1f,
+                // The feed always scrolls — even while zoomed. Zoom/pan use two fingers
+                // only, so one-finger scrolls never fight the zoom gesture.
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-                    // Full-res with a soft crossfade so photos melt in while scrolling.
-                    val request = remember(photo.id) {
+                    // Smooth fade-in on a memory-friendly decode (no crossfade double-buffer).
+                    val request = remember(photo.id, targetWidthPx) {
                         ImageRequest.Builder(context)
                             .data(photo.uri)
-                            .size(Size.ORIGINAL)
-                            .crossfade(true)
+                            .size(Dimension.Pixels(targetWidthPx), Dimension.Undefined)
+                            .crossfade(false)
                             .build()
                     }
                     val painter = rememberAsyncImagePainter(model = request)
@@ -601,20 +610,16 @@ private fun DevicePhotoViewer(
                                 awaitPointerEventScope {
                                     while (true) {
                                         val event = awaitPointerEvent()
-                                        if (event.changes.size > 1) {
-                                            // Pinch: zoom the whole feed + two-finger pan.
+                                        // Two fingers only: pinch-zoom the whole feed + pan.
+                                        // Single finger is never consumed here, so scrolling
+                                        // stays alive even mid-zoom and while zoomed.
+                                        if (event.changes.size >= 2) {
                                             val zoom = event.calculateZoom()
                                             val pan = event.calculatePan()
                                             zoomScale = (zoomScale * zoom).coerceIn(1f, 5f)
                                             zoomOffset =
                                                 if (zoomScale > 1f) zoomOffset + pan else Offset.Zero
                                             event.changes.forEach { it.consume() }
-                                        } else if (zoomScale > 1f) {
-                                            // Single-finger drag pans the zoomed photo
-                                            // (the feed itself doesn't scroll while zoomed).
-                                            val change = event.changes.first()
-                                            zoomOffset += change.position - change.previousPosition
-                                            change.consume()
                                         }
                                     }
                                 }
