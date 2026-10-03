@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.vphoto.app.data.gallery.DeviceAlbum
 import com.vphoto.app.data.gallery.DeviceGalleryRepository
 import com.vphoto.app.data.gallery.DevicePhotoRow
+import com.vphoto.app.data.gallery.groupIntoAlbums
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +80,26 @@ class DeviceGalleryViewModel @Inject constructor(
                 totalCount = total,
                 allPhotosCoverUri = allCover,
                 hasPermission = true
+            )
+        }
+        // Paint first, sniff later: animated-WebP flags upgrade silently in background.
+        refreshAnimatedFlags()
+    }
+
+    private suspend fun refreshAnimatedFlags() {
+        val refreshed = repository.sniffAnimatedWebps(repository.cachedSnapshot())
+        val selected = _uiState.value.selectedAlbum
+        _uiState.update {
+            it.copy(
+                albums = groupIntoAlbums(refreshed),
+                photos = if (selected != null) {
+                    refreshed.filter { row ->
+                        (row.bucketName.ifBlank { "Unknown" }) == selected ||
+                            selected == DeviceGalleryRepository.ALL_PHOTOS_ALBUM
+                    }
+                } else {
+                    emptyList()
+                }
             )
         }
     }

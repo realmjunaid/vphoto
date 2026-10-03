@@ -92,8 +92,7 @@ class DeviceGalleryRepository @Inject constructor(
                             bucketName = cursor.getString(bucketCol)?.takeIf { it.isNotBlank() } ?: "Unknown",
                             dateModified = cursor.getLong(dateCol),
                             size = try { cursor.getLong(sizeCol) } catch (_: Exception) { 0L },
-                            mimeType = mime,
-                            isAnimatedWebp = mime == "image/webp" && isAnimatedWebpUri(uri)
+                            mimeType = mime
                         )
                     )
                 }
@@ -151,8 +150,7 @@ class DeviceGalleryRepository @Inject constructor(
     }
 
     /** Reads the first bytes of a WebP file and checks the VP8X animation flag. */
-    private fun isAnimatedWebpUri(uri: android.net.Uri): Boolean {
-        return try {
+    private fun isAnimatedWebpUri(uri: android.net.Uri): Boolean {        return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 val header = ByteArray(24)
                 var read = 0
@@ -177,6 +175,30 @@ class DeviceGalleryRepository @Inject constructor(
         if (albumName.isNullOrBlank() || albumName == ALL_PHOTOS_ALBUM) return all
         return all.filter { (it.bucketName.ifBlank { "Unknown" }) == albumName }
     }
+
+    /** The current in-memory snapshot (for background flag refreshes). */
+    fun cachedSnapshot(): List<DevicePhotoRow> = cachedPhotos.orEmpty()
+
+    /**
+     * Fills in animated-WebP flags after the first paint: opening one stream per
+     * WebP is slow, so it never blocks the initial scan. Returns new row copies.
+     */
+    suspend fun sniffAnimatedWebps(rows: List<DevicePhotoRow>): List<DevicePhotoRow> =
+        withContext(Dispatchers.IO) {
+            if (rows.none { it.mimeType == "image/webp" && !it.isAnimatedWebp }) return@withContext rows
+            val refreshed = rows.map { row ->
+                if (row.mimeType == "image/webp" && !row.isAnimatedWebp && isAnimatedWebpUri(row.uri)) {
+                    row.copy(isAnimatedWebp = true)
+                } else {
+                    row
+                }
+            }
+            // Keep the cache in sync so album switches stay instant AND flagged.
+            cachedPhotos?.let { cached ->
+                if (cached.size == refreshed.size) cachedPhotos = refreshed
+            }
+            refreshed
+        }
 
     companion object {
         const val ALL_PHOTOS_ALBUM = "All Photos"
