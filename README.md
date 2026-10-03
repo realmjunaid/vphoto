@@ -1,93 +1,92 @@
 # VPhoto
 
+A fast, **100% offline** photo gallery for Android. Open the app and all your device photos are already there — organized folder-wise like Google Photos. No accounts, no uploads, no tracking.
 
+<p>
+  <a href="https://github.com/realmjunaid/vphoto/releases/latest">
+    <img src="https://img.shields.io/badge/Download-vPhoto_v1.0.0.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+  </a>
+</p>
 
-## Getting started
+<p>
+  <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white" alt="Android 8.0+">
+  <img src="https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin">
+  <img src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/Offline-No%20tracking-22c55e" alt="Offline">
+</p>
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## ✨ Features
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure.
+- **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression.
+- **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
+- **Middle-only playback** — GIFs and animated WebPs play only when centered on screen; the rest stay paused to save battery.
+- **Pinch-to-zoom** — 1x–5x zoom with two fingers, pan in every direction while zoomed.
+- **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
+- **Modern feel** — crossfade image loading, animated grids, real-photo album covers.
+- **Private by design** — photos never leave your phone. No internet permission at all.
 
-## Add your files
+## 📥 Download & Install
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+1. Go to the [**latest release**](https://github.com/realmjunaid/vphoto/releases/latest).
+2. Download **`vphoto_v1.0.0.apk`** (under *Assets*).
+3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
+4. Open **VPhoto**, allow photo access — done, your gallery is ready.
+
+> Requires Android 8.0 (API 26) or newer.
+
+## 🔒 Privacy
+
+- No account, no analytics, no ads, no crash reporting.
+- The app **does not request the INTERNET permission** — it is physically incapable of sending anything anywhere.
+- Photos are read from the on-device `MediaStore` only. Nothing is uploaded, ever.
+
+## 🛠 Build from Source
+
+Requirements: **JDK 17** and the **Android SDK** (compileSdk 36).
+
+```bash
+git clone https://github.com/realmjunaid/vphoto.git
+cd vphoto
+# point to your SDK, e.g. C:\Users\you\AppData\Local\Android\Sdk
+echo "sdk.dir=C:\\Users\\you\\AppData\\Local\\Android\\Sdk" > local.properties
+./gradlew :app:assembleDebug
+# APK: app/build/outputs/apk/debug/vphoto_v1.0.0.apk
+```
+
+Run the unit tests:
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+## 🏗 Tech Stack
+
+- **Kotlin + Jetpack Compose (Material 3)** — declarative UI
+- **MediaStore** — instant, no-copy access to device photos
+- **Coil 3** (+ `coil-gif`) — image loading with animated WebP/GIF support
+- **Hilt** — dependency injection
+- **DataStore** — lightweight settings persistence
+- **JUnit + Robolectric + Kotest** — unit & property tests
+
+## 🗂 Project Structure
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/realmjunaid/vphoto.git
-git branch -M main
-git push -uf origin main
+app/src/main/java/com/vphoto/app/
+├── data/gallery/      # MediaStore repository, album grouping
+├── ui/gallery/        # Auto gallery: albums → grid → full view
+├── ui/settings/       # Settings (display, playback, about)
+├── ui/viewer/         # Legacy folder viewer components
+├── navigation/        # Nav graph & routes
+├── player/            # ExoPlayer pool (legacy viewer)
+└── util/thumbnail/    # Video thumbnail pipeline
 ```
 
-## Integrate with your tools
+## 🤝 Contributing
 
-* [Set up project integrations](https://gitlab.com/realmjunaid/vphoto/-/settings/integrations)
+Issues and pull requests are welcome! For big changes, please open an issue first to discuss what you'd like to change.
 
-## Collaborate with your team
+## 📄 License
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+MIT — see [LICENSE](LICENSE). VPhoto is a community rework of [SnapReel](https://github.com/shahriar-ahmed-seam/SnapReel) (also MIT), rebuilt around an automatic offline gallery.

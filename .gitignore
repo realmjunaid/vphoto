@@ -1,0 +1,24 @@
+*.iml
+.gradle
+/local.properties
+/.idea/workspace.xml
+/.idea/libraries
+/.idea/modules.xml
+/.idea/deploymentTargetSelector.xml
+/.idea/caches
+/.idea/assetWizardSettings.xml
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/build
+/app/build
+.DS_Store
+# Release signing: the key and its passwords never go into the repo (see README › Releasing)
+keystore.properties
+*.jks
+*.keystore
+*.p12
+.kiro
+.kotlin
+.vscode
