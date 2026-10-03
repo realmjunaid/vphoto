@@ -1,6 +1,6 @@
-# VPhoto
+# VPhoto — Free Offline Photo Gallery App for Android
 
-A fast, **100% offline** photo gallery for Android. Open the app and all your device photos are already there — organized folder-wise like Google Photos. No accounts, no uploads, no tracking.
+A fast, **100% offline photo gallery app** for Android. Open the app and all your device photos are already there — organized folder-wise like Google Photos. No accounts, no uploads, no tracking. VPhoto is a private, open-source Google Photos alternative for local pictures.
 
 <p>
   <a href="https://github.com/realmjunaid/vphoto/releases/latest">
@@ -82,6 +82,20 @@ app/src/main/java/com/vphoto/app/
 ├── player/            # ExoPlayer pool (legacy viewer)
 └── util/thumbnail/    # Video thumbnail pipeline
 ```
+
+## ❓ Frequently Asked Questions
+
+**Is VPhoto free?**
+Yes — VPhoto is free and open source (MIT). No ads, no premium tier.
+
+**Does VPhoto work offline?**
+Fully. VPhoto requests no internet permission, so it works with Wi-Fi and mobile data turned off.
+
+**Is VPhoto a Google Photos alternative?**
+If you want a simple offline gallery without cloud backup or an account, yes. VPhoto only shows photos already on your phone.
+
+**Which formats can VPhoto show?**
+JPG, PNG, WebP (including animated WebP) and GIF, organized automatically by folder.
 
 ## 🤝 Contributing
 
