@@ -70,6 +70,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -577,7 +578,8 @@ private fun FeedVideoItem(
     uiVisible: Boolean,
     exoPlayer: ExoPlayer,
     videoAspects: MutableMap<Long, Float>,
-    onTogglePlay: () -> Unit
+    onTogglePlay: () -> Unit,
+    onDoubleTapChrome: () -> Unit
 ) {
     val aspect = videoAspects[photo.id] ?: (16f / 9f)
     Box(
@@ -639,7 +641,8 @@ private fun FeedVideoItem(
                 .fillMaxSize()
                 .pointerInput(photo.id) {
                     detectTapGestures(
-                        onTap = { onTogglePlay() }
+                        onTap = { onTogglePlay() },
+                        onDoubleTap = { onDoubleTapChrome() }
                     )
                 }
         )
@@ -699,6 +702,8 @@ private fun DevicePhotoViewer(
     }
     // Double-tap toggles all chrome (top bar + bottom title) for pure-image viewing.
     var uiVisible by remember { mutableStateOf(true) }
+    // Fresh toggle inside gesture detectors (pointerInput blocks outlive recompositions).
+    val toggleChrome = rememberUpdatedState({ uiVisible = !uiVisible })
     // No autoplay while scrolling: only the explicitly opened/tapped photo plays,
     // like Google Photos. Starts with the photo tapped in the grid.
     var playingIndex by remember {
@@ -806,7 +811,7 @@ private fun DevicePhotoViewer(
                 .padding(padding)
                 .background(Color.Black)
                 .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = { uiVisible = !uiVisible })
+                    detectTapGestures(onDoubleTap = { toggleChrome.value() })
                 }
         ) {
             LazyColumn(
@@ -825,7 +830,8 @@ private fun DevicePhotoViewer(
                             uiVisible = uiVisible,
                             exoPlayer = exoPlayer,
                             videoAspects = videoAspects,
-                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index }
+                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index },
+                            onDoubleTapChrome = { toggleChrome.value() }
                         )
                     } else {
                     // Animated formats decode at 1x screen width: every frame is
@@ -887,13 +893,14 @@ private fun DevicePhotoViewer(
                         onDispose { (directDrawable as? Animatable)?.stop() }
                     }
                     // Tap a photo to play it (GIF/WebP/video). Chrome toggles
-                    // with double-tap only.
+                    // with double-tap (also here: child taps never reach the feed).
                     val tapModifier = Modifier
                         .fillMaxWidth()
                         .background(Color.DarkGray)
                         .pointerInput(photo.id) {
                             detectTapGestures(
-                                onTap = { playingIndex = index }
+                                onTap = { playingIndex = index },
+                                onDoubleTap = { toggleChrome.value() }
                             )
                         }
                     Box(
