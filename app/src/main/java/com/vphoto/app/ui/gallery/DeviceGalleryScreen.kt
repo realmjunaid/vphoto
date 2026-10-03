@@ -251,11 +251,7 @@ fun DeviceGalleryScreen(
                     } else {
                         AlbumGrid(
                             albums = uiState.albums,
-                            totalCount = uiState.totalCount,
-                            allPhotosCoverUri = uiState.allPhotosCoverUri,
-                            allPhotosCoverIsVideo = uiState.allPhotosCoverIsVideo,
-                            onAlbumClick = { viewModel.openAlbum(it.name) },
-                            onAllClick = { viewModel.openAlbum(com.vphoto.app.data.gallery.DeviceGalleryRepository.ALL_PHOTOS_ALBUM) }
+                            onAlbumClick = { viewModel.openAlbum(it.name) }
                         )
                     }
                 }
@@ -384,11 +380,7 @@ private fun EmptyState(message: String) {
 @Composable
 private fun AlbumGrid(
     albums: List<DeviceAlbum>,
-    totalCount: Int,
-    allPhotosCoverUri: android.net.Uri?,
-    allPhotosCoverIsVideo: Boolean = false,
-    onAlbumClick: (DeviceAlbum) -> Unit,
-    onAllClick: () -> Unit
+    onAlbumClick: (DeviceAlbum) -> Unit
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -397,55 +389,6 @@ private fun AlbumGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Column(
-                modifier = Modifier
-                    .animateItem()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF1E1E1E))
-                    .clickable(onClick = onAllClick)
-                    .padding(12.dp)
-            ) {
-                if (allPhotosCoverUri != null) {
-                    StaticGalleryImage(
-                        uri = allPhotosCoverUri,
-                        isVideo = allPhotosCoverIsVideo,
-                        contentDescription = "All Photos",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1.4f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.DarkGray)
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1.4f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Violet500.copy(alpha = 0.25f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.PhotoLibrary,
-                            contentDescription = null,
-                            tint = Violet400,
-                            modifier = Modifier.size(44.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "All Photos",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(text = "$totalCount items", color = TextMuted, fontSize = 12.sp)
-            }
-        }
         items(albums, key = { it.name }) { album ->
             Column(
                 modifier = Modifier
