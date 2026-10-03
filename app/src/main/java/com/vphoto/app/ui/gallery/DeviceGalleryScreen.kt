@@ -1,7 +1,10 @@
 package com.vphoto.app.ui.gallery
 
 import android.app.Activity
+import android.graphics.ImageDecoder
 import android.graphics.drawable.Animatable
+import android.graphics.drawable.Drawable
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -91,12 +94,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.DrawableImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
+import coil3.compose.rememberDrawablePainter
 import coil3.decode.BitmapFactoryDecoder
 import kotlin.math.abs
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.size.Dimension
 import coil3.size.Precision
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.vphoto.app.data.gallery.DeviceAlbum
 import com.vphoto.app.data.gallery.DevicePhotoRow
 import com.vphoto.app.data.gallery.hasDeviceGalleryPermission
@@ -725,6 +731,40 @@ private fun DevicePhotoViewer(
                             drawable.stop()
                         }
                     }
+                    // Direct platform decode for animated formats: ImageDecoder always
+                    // returns a real AnimatedImageDrawable (no Coil pipeline ambiguity).
+                    // Static photos keep the Coil painter above.
+                    val useDirectDecode = Build.VERSION.SDK_INT >= 28 &&
+                        (photo.mimeType == "image/gif" || photo.isAnimatedWebp)
+                    var directDrawable by remember(photo.id) { mutableStateOf<Drawable?>(null) }
+                    LaunchedEffect(photo.id, useDirectDecode) {
+                        directDrawable = null
+                        if (!useDirectDecode) return@LaunchedEffect
+                        directDrawable = withContext(Dispatchers.IO) {
+                            try {
+                                val source = ImageDecoder.createSource(context.contentResolver, photo.uri)
+                                ImageDecoder.decodeDrawable(source)
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    }
+                    LaunchedEffect(directDrawable, isPlaying) {
+                        val anim = directDrawable as? Animatable ?: return@LaunchedEffect
+                        if (isPlaying) {
+                            if (!anim.isRunning) anim.start()
+                        } else {
+                            anim.stop()
+                        }
+                    }
+                    DisposableEffect(directDrawable) {
+                        onDispose { (directDrawable as? Animatable)?.stop() }
+                    }
+                    val displayPainter = if (directDrawable != null) {
+                        rememberDrawablePainter(directDrawable!!)
+                    } else {
+                        painter
+                    }
                     // This photo's own pan (resets with every zoom-out via zoomEpoch).
                     var zoomOffset by remember(photo.id, zoomEpoch) { mutableStateOf(Offset.Zero) }
                     // Base height for layout growth: when zoomed, this item occupies
@@ -742,7 +782,7 @@ private fun DevicePhotoViewer(
                             )
                     ) {
                     Image(
-                        painter = painter,
+                        painter = displayPainter,
                         contentDescription = photo.name,
                         contentScale = ContentScale.FillWidth,
                         modifier = Modifier
