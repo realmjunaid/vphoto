@@ -37,11 +37,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -557,6 +559,23 @@ private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit)
                         )
                     }
                 }
+                // GIF / animated-WebP chip: proves the app recognized it as playable.
+                if (!photo.isVideo && (photo.mimeType == "image/gif" || photo.isAnimatedWebp)) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "GIF",
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
         }
     }
@@ -854,6 +873,27 @@ private fun DevicePhotoViewer(
                             contentScale = ContentScale.FillWidth,
                             modifier = zoomContentModifier
                         )
+                    }
+                    // Explicit play/pause for animated photos (tapping the GIF itself
+                    // also plays it). Visible only with the chrome.
+                    if (uiVisible && (photo.mimeType == "image/gif" || photo.isAnimatedWebp)) {
+                        val playing = index == playingIndex
+                        IconButton(
+                            onClick = { playingIndex = if (playing) -1 else index },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 8.dp, bottom = 8.dp)
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        ) {
+                            Icon(
+                                imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (playing) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                     }
                 }
