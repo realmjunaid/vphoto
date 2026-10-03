@@ -1,6 +1,6 @@
-# VPhoto — Free Offline Photo Gallery App for Android
+# VPhoto — Scroll Your Photos Like Reels
 
-A fast, **100% offline photo gallery app** for Android. Open the app and all your device photos are already there — organized folder-wise like Google Photos. No accounts, no uploads, no tracking. VPhoto is a private, open-source Google Photos alternative for local pictures.
+**Your camera roll, reimagined as Reels.** VPhoto is a free, **100% offline photo gallery app** for Android where you scroll through your own photos vertically, full-screen — just like Instagram Reels or TikTok, but for your memories. Open the app and every photo is already there, organized folder-wise. No accounts, no uploads, no tracking.
 
 <p>
   <a href="https://github.com/realmjunaid/vphoto/releases/latest">
@@ -18,6 +18,7 @@ A fast, **100% offline photo gallery app** for Android. Open the app and all you
 
 ## ✨ Features
 
+- **Reels-style vertical scrolling** ⭐ — the heart of VPhoto. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
 - **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure.
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.

@@ -201,7 +201,7 @@ fun SettingsScreen(
                         )
                         val version = com.vphoto.app.BuildConfig.VERSION_NAME
                         Text(
-                            text = "Installed: v$version • 100% offline, no tracking",
+                            text = "Installed: v$version • Reels-style photo scrolling, 100% offline",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted
                         )
