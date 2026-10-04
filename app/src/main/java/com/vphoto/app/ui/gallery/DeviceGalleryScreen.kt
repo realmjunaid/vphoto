@@ -16,9 +16,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
@@ -163,16 +167,71 @@ fun DeviceGalleryScreen(
     // Search narrows the open album; grid and viewer both show the same filtered list.
     val visiblePhotos = viewModel.visiblePhotos(uiState.photos, uiState.searchQuery)
 
-    // If a delete shrinks the list under the open viewer, close it instead of crashing.
-    LaunchedEffect(visiblePhotos.size) {
-        if (viewerIndex >= visiblePhotos.size) viewerIndex = -1
+    // Multi-select state: long-press folders on home, long-press photos in an album.
+    var selectedFolders by remember { mutableStateOf(setOf<String>()) }
+    var selectedPhotoIds by remember { mutableStateOf(setOf<Long>()) }
+    // Home search (icon toggles the field): matches photos across every folder.
+    var showHomeSearch by remember { mutableStateOf(false) }
+    var homeQuery by remember { mutableStateOf("") }
+    // Shared delete targets (grid, folders, albums) with one confirm dialog.
+    var deleteTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
+    var infoTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
+
+    fun toast(msg: String) {
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
 
-    // System back: close viewer first, then go back to album list, then exit screen.
+    fun selectedAlbumRows(): List<DevicePhotoRow> =
+        uiState.photos.filter { it.id in selectedPhotoIds }
+
+    fun performDelete(targets: List<DevicePhotoRow>) {
+        viewModel.requestDelete(targets.map { it.uri }) { ok, msg ->
+            toast(msg)
+            if (ok) {
+                selectedPhotoIds = emptySet()
+                selectedFolders = emptySet()
+                viewModel.refreshAfterDelete()
+            }
+        }
+    }
+
+    // System consent dialog for deletes (Android 10+): launched here, answered in the VM.
+    val consentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        viewModel.answerConsent(result.resultCode == Activity.RESULT_OK)
+    }
+    LaunchedEffect(Unit) {
+        viewModel.consentRequests.collect { sender ->
+            consentLauncher.launch(IntentSenderRequest.Builder(sender).build())
+        }
+    }
+
+    // Viewer source: album-filtered list normally, global search results from home search.
+    var searchViewerPhotos by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
+    val viewerPhotos = searchViewerPhotos ?: visiblePhotos
+
+    // If a delete shrinks the list under the open viewer, close it instead of crashing.
+    LaunchedEffect(viewerPhotos.size) {
+        if (viewerIndex >= viewerPhotos.size) viewerIndex = -1
+    }
+
+    fun dismissViewer() {
+        viewerIndex = -1
+        searchViewerPhotos = null
+    }
+
+    // System back: close viewer first, then clear selections, then back to albums.
     BackHandler(enabled = viewerIndex >= 0) {
         viewerIndex = -1
     }
-    BackHandler(enabled = viewerIndex < 0 && uiState.selectedAlbum != null) {
+    BackHandler(enabled = viewerIndex < 0 && selectedPhotoIds.isNotEmpty()) {
+        selectedPhotoIds = emptySet()
+    }
+    BackHandler(enabled = viewerIndex < 0 && selectedPhotoIds.isEmpty() && selectedFolders.isNotEmpty()) {
+        selectedFolders = emptySet()
+    }
+    BackHandler(enabled = viewerIndex < 0 && selectedPhotoIds.isEmpty() && selectedFolders.isEmpty() && uiState.selectedAlbum != null) {
         viewModel.backToAlbums()
     }
 
@@ -196,6 +255,18 @@ fun DeviceGalleryScreen(
         Scaffold(
             containerColor = Black,
         topBar = {
+            if (selectedFolders.isNotEmpty()) {
+                SelectionBar(
+                    count = selectedFolders.size,
+                    noun = "folders",
+                    onShare = {
+                        sharePhotos(context, viewModel.photosInFolders(selectedFolders))
+                    },
+                    onInfo = { infoTargets = viewModel.photosInFolders(selectedFolders) },
+                    onDelete = { deleteTargets = viewModel.photosInFolders(selectedFolders) },
+                    onClear = { selectedFolders = emptySet() }
+                )
+            } else {
             TopAppBar(
                 title = {
                     Column {
@@ -234,7 +305,15 @@ fun DeviceGalleryScreen(
                     }
                 },
                 actions = {
-                    if (isHome) {
+                    if (isHome && uiState.selectedAlbum == null && selectedFolders.isEmpty()) {
+                        IconButton(onClick = {
+                            showHomeSearch = !showHomeSearch
+                            if (!showHomeSearch) homeQuery = ""
+                        }) {
+                            Icon(Icons.Filled.Search, contentDescription = "Search", tint = TextSecondary)
+                        }
+                    }
+                    if (isHome && selectedFolders.isEmpty()) {
                         IconButton(onClick = onSettingsClick) {
                             Icon(
                                 imageVector = Icons.Filled.Settings,
@@ -246,6 +325,7 @@ fun DeviceGalleryScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
+            }
         }
     ) { padding ->
         PullToRefreshBox(
@@ -274,10 +354,62 @@ fun DeviceGalleryScreen(
                     if (uiState.albums.isEmpty()) {
                         EmptyState(message = "No media found on this device")
                     } else {
-                        AlbumGrid(
-                            albums = uiState.albums,
-                            onAlbumClick = { viewModel.openAlbum(it.name) }
-                        )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            if (showHomeSearch) {
+                                OutlinedTextField(
+                                    value = homeQuery,
+                                    onValueChange = { homeQuery = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    placeholder = { Text("Search all photos", color = TextMuted) },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted)
+                                    },
+                                    trailingIcon = {
+                                        if (homeQuery.isNotEmpty()) {
+                                            IconButton(onClick = { homeQuery = "" }) {
+                                                Icon(Icons.Filled.Clear, contentDescription = "Clear", tint = TextMuted)
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                            }
+                            if (homeQuery.isBlank()) {
+                                AlbumGrid(
+                                    albums = uiState.albums,
+                                    selected = selectedFolders,
+                                    onAlbumClick = { album ->
+                                        if (selectedFolders.isNotEmpty()) {
+                                            selectedFolders = selectedFolders.toggle(album.name)
+                                        } else {
+                                            selectedPhotoIds = emptySet()
+                                            viewModel.openAlbum(album.name)
+                                        }
+                                    },
+                                    onAlbumLongClick = { album ->
+                                        selectedFolders = selectedFolders + album.name
+                                    }
+                                )
+                            } else {
+                                val results = viewModel.searchAll(homeQuery)
+                                if (results.isEmpty()) {
+                                    EmptyState(message = "No matches for \"$homeQuery\"")
+                                } else {
+                                    PhotoGrid(
+                                        photos = results,
+                                        selectedIds = emptySet(),
+                                        onPhotoClick = { gridIndex ->
+                                            searchViewerPhotos = results
+                                            viewerIndex = gridIndex
+                                        },
+                                        onPhotoLongClick = {}
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 else -> {
@@ -285,34 +417,37 @@ fun DeviceGalleryScreen(
                         EmptyState(message = "No media in this folder")
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            OutlinedTextField(
-                                value = uiState.searchQuery,
-                                onValueChange = viewModel::setSearchQuery,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                placeholder = { Text("Search in this folder", color = TextMuted) },
-                                leadingIcon = {
-                                    Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted)
-                                },
-                                trailingIcon = {
-                                    if (uiState.searchQuery.isNotEmpty()) {
-                                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                            Icon(Icons.Filled.Clear, contentDescription = "Clear", tint = TextMuted)
-                                        }
-                                    }
-                                },
-                                singleLine = true,
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            if (visiblePhotos.isEmpty()) {
-                                EmptyState(message = "No matches for \"${uiState.searchQuery}\"")
-                            } else {
-                                PhotoGrid(
-                                    photos = visiblePhotos,
-                                    onPhotoClick = { gridIndex -> viewerIndex = gridIndex }
+                            if (selectedPhotoIds.isNotEmpty()) {
+                                SelectionBar(
+                                    count = selectedPhotoIds.size,
+                                    noun = "items",
+                                    onShare = {
+                                        sharePhotos(context, selectedAlbumRows())
+                                    },
+                                    onInfo = { infoTargets = selectedAlbumRows() },
+                                    onDelete = { deleteTargets = selectedAlbumRows() },
+                                    onClear = { selectedPhotoIds = emptySet() }
                                 )
                             }
+                            PhotoGrid(
+                                photos = visiblePhotos,
+                                selectedIds = selectedPhotoIds,
+                                onPhotoClick = { gridIndex ->
+                                    val id = visiblePhotos.getOrNull(gridIndex)?.id
+                                        ?: return@PhotoGrid
+                                    if (selectedPhotoIds.isNotEmpty()) {
+                                        selectedPhotoIds = selectedPhotoIds.toggle(id)
+                                    } else {
+                                        searchViewerPhotos = null
+                                        viewerIndex = gridIndex
+                                    }
+                                },
+                                onPhotoLongClick = { gridIndex ->
+                                    visiblePhotos.getOrNull(gridIndex)?.let {
+                                        selectedPhotoIds = selectedPhotoIds + it.id
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -322,18 +457,38 @@ fun DeviceGalleryScreen(
     }
 
     // Full view: continuous vertical feed with everything, overlaid on the gallery.
-    if (viewerIndex >= 0 && viewerIndex < visiblePhotos.size) {
+    if (viewerIndex >= 0 && viewerIndex < viewerPhotos.size) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Black)
         ) {
             DevicePhotoViewer(
-                photos = visiblePhotos,
+                photos = viewerPhotos,
                 startIndex = viewerIndex,
                 title = uiState.selectedAlbum ?: "",
-                onDismiss = { viewerIndex = -1 }
+                onDismiss = { dismissViewer() }
             )
+        }
+    }
+
+    // Shared delete confirmation for grid + folder selections.
+    DeleteConfirmDialog(
+        targets = deleteTargets,
+        onConfirm = { targets ->
+            deleteTargets = null
+            performDelete(targets)
+        },
+        onDismiss = { deleteTargets = null }
+    )
+
+    // Shared details sheet for grid + folder selections.
+    infoTargets?.let { infos ->
+        ModalBottomSheet(
+            onDismissRequest = { infoTargets = null },
+            containerColor = SurfaceVariant
+        ) {
+            MediaDetailsSheet(photos = infos)
         }
     }
     } // root Box
@@ -428,10 +583,13 @@ private fun EmptyState(message: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AlbumGrid(
     albums: List<DeviceAlbum>,
-    onAlbumClick: (DeviceAlbum) -> Unit
+    onAlbumClick: (DeviceAlbum) -> Unit,
+    selected: Set<String>,
+    onAlbumLongClick: (DeviceAlbum) -> Unit
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -441,12 +599,20 @@ private fun AlbumGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(albums, key = { it.name }) { album ->
+            val isSelected = album.name in selected
             Column(
                 modifier = Modifier
                     .animateItem()
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color(0xFF1E1E1E))
-                    .clickable(onClick = { onAlbumClick(album) })
+                    .then(
+                        if (isSelected) Modifier.border(2.dp, Color.White, RoundedCornerShape(14.dp))
+                        else Modifier
+                    )
+                    .combinedClickable(
+                        onClick = { onAlbumClick(album) },
+                        onLongClick = { onAlbumLongClick(album) }
+                    )
                     .padding(12.dp)
             ) {
                 StaticGalleryImage(
@@ -485,8 +651,14 @@ private fun AlbumGrid(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit) {
+private fun PhotoGrid(
+    photos: List<DevicePhotoRow>,
+    onPhotoClick: (Int) -> Unit,
+    selectedIds: Set<Long>,
+    onPhotoLongClick: (Int) -> Unit
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
@@ -495,12 +667,19 @@ private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit)
     ) {
         items(photos.size, key = { photos[it].id }) { index ->
             val photo = photos[index]
+            val isSelected = photo.id in selectedIds
             Box(
                 modifier = Modifier
                     .animateItem()
                     .aspectRatio(1f)
                     .background(Color.DarkGray)
-                    .clickable { onPhotoClick(index) }
+                    .then(
+                        if (isSelected) Modifier.border(2.dp, Color.White) else Modifier
+                    )
+                    .combinedClickable(
+                        onClick = { onPhotoClick(index) },
+                        onLongClick = { onPhotoLongClick(index) }
+                    )
             ) {
                 StaticGalleryImage(
                     uri = photo.uri,
@@ -538,8 +717,7 @@ private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit)
                     }
                 }
                 // GIF / animated-WebP chip: proves the app recognized it as playable.
-                if (!photo.isVideo && (photo.mimeType == "image/gif" || photo.isAnimatedWebp)) {
-                    Box(
+                if (!photo.isVideo && (photo.mimeType == "image/gif" || photo.isAnimatedWebp)) {                    Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(4.dp)
@@ -553,6 +731,22 @@ private fun PhotoGrid(photos: List<DevicePhotoRow>, onPhotoClick: (Int) -> Unit)
                             fontWeight = FontWeight.Medium
                         )
                     }
+                }
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.35f))
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "Selected",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .size(22.dp)
+                    )
                 }
             }
         }
@@ -722,24 +916,16 @@ private fun DevicePhotoViewer(
     // Delete / info UI state.
     var pendingDelete by remember { mutableStateOf<DevicePhotoRow?>(null) }
     var infoPhoto by remember { mutableStateOf<DevicePhotoRow?>(null) }
-    var pendingConsentUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     fun toast(msg: String) {
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
 
-    val deleteConsentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartIntentSenderForResult()
-    ) { result ->
-        val uri = pendingConsentUri
-        pendingConsentUri = null
-        if (result.resultCode == Activity.RESULT_OK && uri != null) {
-            // Consent granted: retry the delete, then rescan.
-            viewModel.requestDelete(uri, onConsent = {}, onDone = { ok, msg ->
-                if (ok) viewModel.refreshAfterDelete() else toast(msg)
-            })
-        } else {
-            toast("Delete cancelled")
+    /** Runs a delete and toasts the outcome; consent dialogs are handled one level up. */
+    fun performDelete(targets: List<DevicePhotoRow>) {
+        viewModel.requestDelete(targets.map { it.uri }) { ok, msg ->
+            toast(msg)
+            if (ok) viewModel.refreshAfterDelete()
         }
     }
 
@@ -839,7 +1025,7 @@ private fun DevicePhotoViewer(
                     },
                     actions = {
                         photos.getOrNull(currentIndex)?.let { current ->
-                            IconButton(onClick = { sharePhoto(context, current) }) {
+                            IconButton(onClick = { sharePhotos(context, listOf(current)) }) {
                                 Icon(
                                     imageVector = Icons.Filled.Share,
                                     contentDescription = "Share",
@@ -1067,40 +1253,10 @@ private fun DevicePhotoViewer(
 
     // Delete confirmation.
     pendingDelete?.let { target ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            containerColor = SurfaceVariant,
-            title = { Text("Delete this ${if (target.isVideo) "video" else "photo"}?", color = TextPrimary) },
-            text = {
-                Text(
-                    "\"${target.name}\" will be removed from your device.",
-                    color = TextSecondary
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingDelete = null
-                    viewModel.requestDelete(
-                        uri = target.uri,
-                        onConsent = { sender ->
-                            pendingConsentUri = target.uri
-                            deleteConsentLauncher.launch(
-                                IntentSenderRequest.Builder(sender).build()
-                            )
-                        },
-                        onDone = { ok, msg ->
-                            if (ok) viewModel.refreshAfterDelete() else toast(msg)
-                        }
-                    )
-                }) {
-                    Text("Delete", color = ErrorRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) {
-                    Text("Cancel", color = TextSecondary)
-                }
-            }
+        DeleteConfirmDialog(
+            targets = listOf(target),
+            onConfirm = { performDelete(listOf(target)) },
+            onDismiss = { pendingDelete = null }
         )
     }
 
@@ -1110,23 +1266,150 @@ private fun DevicePhotoViewer(
             onDismissRequest = { infoPhoto = null },
             containerColor = SurfaceVariant
         ) {
-            MediaDetailsSheet(photo = info)
+            MediaDetailsSheet(photos = listOf(info))
         }
     }
 }
 
-/** System share sheet for one photo/video. */
-internal fun sharePhoto(context: android.content.Context, photo: DevicePhotoRow) {
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = photo.mimeType.ifBlank { "*/*" }
-        putExtra(Intent.EXTRA_STREAM, photo.uri)
+/** System share sheet for one or many photos/videos. */
+internal fun sharePhotos(context: android.content.Context, photos: List<DevicePhotoRow>) {
+    if (photos.isEmpty()) return
+    if (photos.size == 1) {
+        val photo = photos.single()
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = photo.mimeType.ifBlank { "*/*" }
+            putExtra(Intent.EXTRA_STREAM, photo.uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share via"))
+        return
+    }
+    val mimes = photos.map { it.mimeType.ifBlank { "*/*" } }.toSet()
+    val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+        type = if (mimes.size == 1) mimes.single() else "*/*"
+        putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(photos.map { it.uri }))
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(intent, "Share via"))
+    context.startActivity(Intent.createChooser(intent, "Share ${photos.size} items via"))
+}
+
+/** Shared delete confirmation for viewer, grid and folder selections. */
+@Composable
+private fun DeleteConfirmDialog(
+    targets: List<DevicePhotoRow>?,
+    onConfirm: (List<DevicePhotoRow>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    targets?.takeIf { it.isNotEmpty() }?.let { list ->
+        val title = if (list.size == 1) {
+            val one = list.single()
+            "Delete this ${if (one.isVideo) "video" else "photo"}?"
+        } else {
+            "Delete ${list.size} items?"
+        }
+        val message = if (list.size == 1) {
+            "\"${list.single().name}\" will be removed from your device."
+        } else {
+            "The selected items will be removed from your device."
+        }
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = SurfaceVariant,
+            title = { Text(title, color = TextPrimary) },
+            text = { Text(message, color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = { onConfirm(list) }) {
+                    Text("Delete", color = ErrorRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
+}
+
+/** Contextual bar for multi-select: count + share/info/delete/clear. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionBar(
+    count: Int,
+    noun: String,
+    onShare: () -> Unit,
+    onInfo: () -> Unit,
+    onDelete: () -> Unit,
+    onClear: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = "$count $noun selected",
+                color = TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onClear) {
+                Icon(
+                    imageVector = Icons.Filled.Clear,
+                    contentDescription = "Clear selection",
+                    tint = Color.White
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onShare) {
+                Icon(Icons.Filled.Share, contentDescription = "Share", tint = Color.White)
+            }
+            IconButton(onClick = onInfo) {
+                Icon(Icons.Filled.Info, contentDescription = "Details", tint = Color.White)
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color.White)
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+    )
+}
+
+private fun <T> Set<T>.toggle(value: T): Set<T> =
+    if (value in this) this - value else this + value
+
+@Composable
+private fun MediaDetailsSheet(photos: List<DevicePhotoRow>) {
+    if (photos.size == 1) {
+        SingleMediaDetailsSheet(photo = photos.single())
+        return
+    }
+    val totalSize = photos.sumOf { it.size }
+    val videos = photos.count { it.isVideo }
+    val images = photos.size - videos
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "${photos.size} items selected",
+            color = TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp
+        )
+        MediaDetailRow(label = "Photos", value = images.toString())
+        MediaDetailRow(label = "Videos", value = videos.toString())
+        MediaDetailRow(label = "Total size", value = formatBytes(totalSize))
+    }
 }
 
 @Composable
-private fun MediaDetailsSheet(photo: DevicePhotoRow) {
+private fun SingleMediaDetailsSheet(photo: DevicePhotoRow) {
     val kind = when {
         photo.isVideo -> "Video"
         photo.mimeType == "image/gif" -> "GIF"

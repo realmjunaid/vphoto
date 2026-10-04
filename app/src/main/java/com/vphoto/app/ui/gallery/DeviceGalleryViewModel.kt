@@ -10,8 +10,12 @@ import com.vphoto.app.data.gallery.DeviceGalleryRepository
 import com.vphoto.app.data.gallery.DevicePhotoRow
 import com.vphoto.app.data.gallery.groupIntoAlbums
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -130,24 +134,68 @@ class DeviceGalleryViewModel @Inject constructor(
         else photos.filter { it.name.contains(query.trim(), ignoreCase = true) }
 
     /**
-     * Deletes one item. [onConsent] launches the system dialog on Android 10+;
-     * [onDone] receives true when the item is gone (caller toasts + closes viewer if needed).
+     * Deletes items (single or batch). System consent dialogs surface through
+     * [consentRequests]; the screen launches them and answers via [answerConsent].
+     * [onDone] receives true when everything is gone.
      */
-    fun requestDelete(uri: Uri, onConsent: (IntentSender) -> Unit, onDone: (Boolean, String) -> Unit) {
+    private val _consentRequests = MutableSharedFlow<IntentSender>(extraBufferCapacity = 1)
+    val consentRequests: SharedFlow<IntentSender> = _consentRequests.asSharedFlow()
+    private var consentGate: CompletableDeferred<Boolean>? = null
+
+    fun answerConsent(granted: Boolean) {
+        consentGate?.complete(granted)
+        consentGate = null
+    }
+
+    fun requestDelete(uris: List<Uri>, onDone: (Boolean, String) -> Unit) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
-            when (val result = repository.deleteMedia(uri)) {
-                is DeleteResult.Deleted -> {
-                    reload()
-                    onDone(true, "Deleted")
+            var remaining = uris
+            repeat(uris.size + 2) {
+                when (val result = repository.deleteMedia(remaining)) {
+                    is DeleteResult.Deleted -> {
+                        reload()
+                        val label = if (uris.size > 1) "Deleted ${uris.size} items" else "Deleted"
+                        onDone(true, label)
+                        return@launch
+                    }
+                    is DeleteResult.NeedsConsent -> {
+                        val gate = CompletableDeferred<Boolean>()
+                        consentGate = gate
+                        _consentRequests.emit(result.intentSender)
+                        if (!gate.await()) {
+                            onDone(false, "Delete cancelled")
+                            return@launch
+                        }
+                        remaining = result.pending
+                    }
+                    is DeleteResult.Failed -> {
+                        onDone(false, result.message)
+                        return@launch
+                    }
                 }
-                is DeleteResult.NeedsConsent -> onConsent(result.intentSender)
-                is DeleteResult.Failed -> onDone(false, result.message)
             }
+            onDone(false, "Delete failed")
         }
     }
 
     /** Rescans after a consent grant or a viewer delete. */
     fun refreshAfterDelete() {
         viewModelScope.launch { reload() }
+    }
+
+    /** Rows inside the given folders (for folder share/info/delete). */
+    fun photosInFolders(names: Set<String>): List<DevicePhotoRow> {
+        if (names.isEmpty()) return emptyList()
+        val normalized = names.map { it.ifBlank { "Unknown" } }.toSet()
+        return repository.cachedSnapshot()
+            .filter { it.bucketName.ifBlank { "Unknown" } in normalized }
+    }
+
+    /** Global name search across every folder (home search icon). */
+    fun searchAll(query: String): List<DevicePhotoRow> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        return repository.cachedSnapshot().filter { it.name.contains(q, ignoreCase = true) }
     }
 }

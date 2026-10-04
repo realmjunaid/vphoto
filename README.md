@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vphoto/releases/latest">
-    <img src="https://img.shields.io/badge/Download-vPhoto_v1.0.5.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-vPhoto_v1.0.6.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -24,6 +24,8 @@
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Middle-only playback** — GIFs and animated WebPs play only when centered on screen; the rest stay paused to save battery.
 - **Pinch-to-zoom** — 1x–5x zoom with two fingers, pan in every direction while zoomed.
+- **Share, delete, search** — system share sheet, delete with confirm + Android consent, global name search from home, long-press multi-select in folders and on home with batch actions.
+- **Details sheet** — size, resolution, date, folder and type for any photo or selection.
 - **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
 - **Modern feel** — crossfade image loading, animated grids, real-photo album covers.
 - **Private by design** — photos never leave your phone. No internet permission at all.
@@ -31,7 +33,7 @@
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vphoto/releases/latest).
-2. Download **`vphoto_v1.0.5-release.apk`** (under *Assets*).
+2. Download **`vphoto_v1.0.6-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VPhoto**, allow photo access — done, your gallery is ready.
 

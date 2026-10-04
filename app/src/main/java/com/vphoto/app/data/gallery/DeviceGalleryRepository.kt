@@ -20,8 +20,11 @@ import javax.inject.Singleton
 /** Outcome of a MediaStore delete request. */
 sealed interface DeleteResult {
     data object Deleted : DeleteResult
-    /** System consent dialog required (Android 10+): launch the sender, then retry on OK. */
-    data class NeedsConsent(val intentSender: android.content.IntentSender) : DeleteResult
+    /**
+     * System consent dialog required (Android 10+): launch the sender, then call
+     * [DeviceGalleryRepository.deleteMedia] again with [pending] on OK.
+     */
+    data class NeedsConsent(val intentSender: android.content.IntentSender, val pending: List<Uri>) : DeleteResult
     data class Failed(val message: String) : DeleteResult
 }
 
@@ -208,27 +211,55 @@ class DeviceGalleryRepository @Inject constructor(
     fun cachedSnapshot(): List<DevicePhotoRow> = cachedPhotos.orEmpty()
 
     /**
-     * Deletes one item from the device. On Android 10+ the system may demand
-     * user consent ([DeleteResult.NeedsConsent]): launch the sender and retry on OK.
+     * Deletes items from the device. Tries direct deletes first; leftovers go
+     * through one system consent dialog on Android 10+ ([DeleteResult.NeedsConsent]
+     * carries the still-pending URIs for the retry after OK).
      * The cache is dropped on success so the next load rescans.
      */
-    suspend fun deleteMedia(uri: Uri): DeleteResult = withContext(Dispatchers.IO) {
+    suspend fun deleteMedia(uris: List<Uri>): DeleteResult = withContext(Dispatchers.IO) {
+        if (uris.isEmpty()) return@withContext DeleteResult.Deleted
         try {
-            val rows = context.contentResolver.delete(uri, null, null)
-            if (rows > 0) {
-                cachedPhotos = null
-                DeleteResult.Deleted
-            } else {
-                DeleteResult.Failed("File not found")
+            val survivors = mutableListOf<Uri>()
+            for (uri in uris) {
+                try {
+                    context.contentResolver.delete(uri, null, null)
+                } catch (e: RecoverableSecurityException) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        // Batch below: one consent dialog for all leftovers.
+                        survivors += uri
+                    } else {
+                        return@withContext DeleteResult.NeedsConsent(
+                            e.userAction.actionIntent.intentSender,
+                            uris
+                        )
+                    }
+                } catch (_: SecurityException) {
+                    return@withContext DeleteResult.Failed("Permission denied")
+                } catch (e: Exception) {
+                    return@withContext DeleteResult.Failed(e.message ?: "Delete failed")
+                }
             }
-        } catch (e: RecoverableSecurityException) {
-            DeleteResult.NeedsConsent(e.userAction.actionIntent.intentSender)
-        } catch (e: SecurityException) {
-            DeleteResult.Failed(e.message ?: "Permission denied")
+            if (survivors.isEmpty()) {
+                cachedPhotos = null
+                return@withContext DeleteResult.Deleted
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return@withContext try {
+                    val pending = MediaStore.createDeleteRequest(context.contentResolver, survivors)
+                    DeleteResult.NeedsConsent(pending.intentSender, survivors)
+                } catch (e: Exception) {
+                    DeleteResult.Failed(e.message ?: "Delete failed")
+                }
+            }
+            // Below Android 11 every survivor already reported its own consent above.
+            DeleteResult.Failed("Delete failed")
         } catch (e: Exception) {
             DeleteResult.Failed(e.message ?: "Delete failed")
         }
     }
+
+    /** Single-item convenience for [deleteMedia]. */
+    suspend fun deleteMedia(uri: Uri): DeleteResult = deleteMedia(listOf(uri))
 
     /**
      * Fills in animated-WebP flags after the first paint: opening one stream per
