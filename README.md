@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vphoto/releases/latest">
-    <img src="https://img.shields.io/badge/Download-vPhoto_v1.0.4.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-vPhoto_v1.0.5.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -31,7 +31,7 @@
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vphoto/releases/latest).
-2. Download **`vphoto_v1.0.4-release.apk`** (under *Assets*).
+2. Download **`vphoto_v1.0.5-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VPhoto**, allow photo access — done, your gallery is ready.
 

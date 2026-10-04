@@ -1,12 +1,15 @@
 package com.vphoto.app.ui.gallery
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.ImageDecoder
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,12 +44,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,8 +63,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -112,8 +125,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.vphoto.app.data.gallery.DeviceAlbum
 import com.vphoto.app.data.gallery.DevicePhotoRow
+import com.vphoto.app.data.gallery.formatBytes
+import com.vphoto.app.data.gallery.formatMediaDate
+import com.vphoto.app.data.gallery.formatResolution
 import com.vphoto.app.data.gallery.hasDeviceGalleryPermission
 import com.vphoto.app.ui.theme.Black
+import com.vphoto.app.ui.theme.ErrorRed
+import com.vphoto.app.ui.theme.SurfaceVariant
 import com.vphoto.app.ui.theme.TextDisabled
 import com.vphoto.app.ui.theme.TextMuted
 import com.vphoto.app.ui.theme.TextPrimary
@@ -142,6 +160,13 @@ fun DeviceGalleryScreen(
     val context = LocalContext.current
     var viewerIndex by remember { mutableIntStateOf(-1) }
     // One continuous feed for everything: photos, GIFs, animated WebPs, videos.
+    // Search narrows the open album; grid and viewer both show the same filtered list.
+    val visiblePhotos = viewModel.visiblePhotos(uiState.photos, uiState.searchQuery)
+
+    // If a delete shrinks the list under the open viewer, close it instead of crashing.
+    LaunchedEffect(visiblePhotos.size) {
+        if (viewerIndex >= visiblePhotos.size) viewerIndex = -1
+    }
 
     // System back: close viewer first, then go back to album list, then exit screen.
     BackHandler(enabled = viewerIndex >= 0) {
@@ -259,10 +284,36 @@ fun DeviceGalleryScreen(
                     if (uiState.photos.isEmpty()) {
                         EmptyState(message = "No media in this folder")
                     } else {
-                        PhotoGrid(
-                            photos = uiState.photos,
-                            onPhotoClick = { gridIndex -> viewerIndex = gridIndex }
-                        )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            OutlinedTextField(
+                                value = uiState.searchQuery,
+                                onValueChange = viewModel::setSearchQuery,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                placeholder = { Text("Search in this folder", color = TextMuted) },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted)
+                                },
+                                trailingIcon = {
+                                    if (uiState.searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                            Icon(Icons.Filled.Clear, contentDescription = "Clear", tint = TextMuted)
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            if (visiblePhotos.isEmpty()) {
+                                EmptyState(message = "No matches for \"${uiState.searchQuery}\"")
+                            } else {
+                                PhotoGrid(
+                                    photos = visiblePhotos,
+                                    onPhotoClick = { gridIndex -> viewerIndex = gridIndex }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -271,14 +322,14 @@ fun DeviceGalleryScreen(
     }
 
     // Full view: continuous vertical feed with everything, overlaid on the gallery.
-    if (viewerIndex >= 0 && viewerIndex < uiState.photos.size) {
+    if (viewerIndex >= 0 && viewerIndex < visiblePhotos.size) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Black)
         ) {
             DevicePhotoViewer(
-                photos = uiState.photos,
+                photos = visiblePhotos,
                 startIndex = viewerIndex,
                 title = uiState.selectedAlbum ?: "",
                 onDismiss = { viewerIndex = -1 }
@@ -631,7 +682,8 @@ private fun DevicePhotoViewer(
     photos: List<DevicePhotoRow>,
     startIndex: Int,
     title: String,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    viewModel: DeviceGalleryViewModel = hiltViewModel()
 ) {
     // Drive-PDF style: one continuous vertical feed, every photo full-width back to back,
     // starting at the tapped photo. Square photos stack several per screen.
@@ -666,6 +718,33 @@ private fun DevicePhotoViewer(
     // like Google Photos. Starts with the photo tapped in the grid.
     var playingIndex by remember {
         mutableIntStateOf(startIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
+    }
+    // Delete / info UI state.
+    var pendingDelete by remember { mutableStateOf<DevicePhotoRow?>(null) }
+    var infoPhoto by remember { mutableStateOf<DevicePhotoRow?>(null) }
+    var pendingConsentUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    fun toast(msg: String) {
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    val deleteConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        val uri = pendingConsentUri
+        pendingConsentUri = null
+        if (result.resultCode == Activity.RESULT_OK && uri != null) {
+            // Consent granted: retry the delete, then rescan.
+            viewModel.requestDelete(uri, onConsent = {}, onDone = { ok, msg ->
+                if (ok) viewModel.refreshAfterDelete() else toast(msg)
+            })
+        } else {
+            toast("Delete cancelled")
+        }
+    }
+
+    fun confirmDelete(photo: DevicePhotoRow) {
+        pendingDelete = photo
     }
     // One shared player for inline videos: the tapped video binds and plays,
     // everything else stays paused. Aspect is learned per video once it plays.
@@ -756,6 +835,31 @@ private fun DevicePhotoViewer(
                                 contentDescription = "Close",
                                 tint = Color.White
                             )
+                        }
+                    },
+                    actions = {
+                        photos.getOrNull(currentIndex)?.let { current ->
+                            IconButton(onClick = { sharePhoto(context, current) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Share,
+                                    contentDescription = "Share",
+                                    tint = Color.White
+                                )
+                            }
+                            IconButton(onClick = { infoPhoto = current }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Info,
+                                    contentDescription = "Details",
+                                    tint = Color.White
+                                )
+                            }
+                            IconButton(onClick = { confirmDelete(current) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Delete",
+                                    tint = Color.White
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black.copy(alpha = 0.6f))
@@ -959,5 +1063,118 @@ private fun DevicePhotoViewer(
                 }
             }
         }
+    }
+
+    // Delete confirmation.
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            containerColor = SurfaceVariant,
+            title = { Text("Delete this ${if (target.isVideo) "video" else "photo"}?", color = TextPrimary) },
+            text = {
+                Text(
+                    "\"${target.name}\" will be removed from your device.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    viewModel.requestDelete(
+                        uri = target.uri,
+                        onConsent = { sender ->
+                            pendingConsentUri = target.uri
+                            deleteConsentLauncher.launch(
+                                IntentSenderRequest.Builder(sender).build()
+                            )
+                        },
+                        onDone = { ok, msg ->
+                            if (ok) viewModel.refreshAfterDelete() else toast(msg)
+                        }
+                    )
+                }) {
+                    Text("Delete", color = ErrorRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    // Details bottom sheet: size, resolution, date and more.
+    infoPhoto?.let { info ->
+        ModalBottomSheet(
+            onDismissRequest = { infoPhoto = null },
+            containerColor = SurfaceVariant
+        ) {
+            MediaDetailsSheet(photo = info)
+        }
+    }
+}
+
+/** System share sheet for one photo/video. */
+internal fun sharePhoto(context: android.content.Context, photo: DevicePhotoRow) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = photo.mimeType.ifBlank { "*/*" }
+        putExtra(Intent.EXTRA_STREAM, photo.uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share via"))
+}
+
+@Composable
+private fun MediaDetailsSheet(photo: DevicePhotoRow) {
+    val kind = when {
+        photo.isVideo -> "Video"
+        photo.mimeType == "image/gif" -> "GIF"
+        photo.isAnimatedWebp -> "Animated WebP"
+        photo.mimeType.startsWith("image/") -> "Photo"
+        else -> "Media"
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = photo.name,
+            color = TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        MediaDetailRow(label = "Type", value = kind)
+        MediaDetailRow(label = "Size", value = formatBytes(photo.size))
+        MediaDetailRow(label = "Resolution", value = formatResolution(photo.width, photo.height))
+        if (photo.isVideo && photo.durationMs > 0) {
+            MediaDetailRow(label = "Duration", value = formatGridDuration(photo.durationMs))
+        }
+        MediaDetailRow(label = "Date", value = formatMediaDate(photo.dateModified))
+        MediaDetailRow(label = "Folder", value = photo.bucketName.ifBlank { "Unknown" })
+    }
+}
+
+@Composable
+private fun MediaDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = label, color = TextMuted, fontSize = 13.sp)
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = value,
+            color = TextPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

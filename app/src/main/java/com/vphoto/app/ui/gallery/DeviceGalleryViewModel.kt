@@ -1,7 +1,10 @@
 package com.vphoto.app.ui.gallery
 
+import android.content.IntentSender
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vphoto.app.data.gallery.DeleteResult
 import com.vphoto.app.data.gallery.DeviceAlbum
 import com.vphoto.app.data.gallery.DeviceGalleryRepository
 import com.vphoto.app.data.gallery.DevicePhotoRow
@@ -23,7 +26,9 @@ data class DeviceGalleryUiState(
     val hasPermission: Boolean = false,
     val totalCount: Int = 0,
     /** Pull-to-refresh spinner (content stays visible underneath). */
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    /** Name filter inside the open album. */
+    val searchQuery: String = ""
 )
 
 @HiltViewModel
@@ -101,12 +106,12 @@ class DeviceGalleryViewModel @Inject constructor(
 
     fun openAlbum(name: String?) {
         if (name == null) {
-            _uiState.update { it.copy(selectedAlbum = null, photos = emptyList()) }
+            _uiState.update { it.copy(selectedAlbum = null, photos = emptyList(), searchQuery = "") }
             return
         }
         // Cache is warm after the first scan: open instantly, no loading flash.
         val instant = _uiState.value.albums.isNotEmpty()
-        _uiState.update { it.copy(selectedAlbum = name, isLoading = !instant) }
+        _uiState.update { it.copy(selectedAlbum = name, isLoading = !instant, searchQuery = "") }
         viewModelScope.launch {
             val photos = repository.loadPhotos(name)
             _uiState.update { it.copy(photos = photos, isLoading = false) }
@@ -114,4 +119,35 @@ class DeviceGalleryViewModel @Inject constructor(
     }
 
     fun backToAlbums() = openAlbum(null)
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    /** Photos of the open album matching the search box (empty query = everything). */
+    fun visiblePhotos(photos: List<DevicePhotoRow>, query: String): List<DevicePhotoRow> =
+        if (query.isBlank()) photos
+        else photos.filter { it.name.contains(query.trim(), ignoreCase = true) }
+
+    /**
+     * Deletes one item. [onConsent] launches the system dialog on Android 10+;
+     * [onDone] receives true when the item is gone (caller toasts + closes viewer if needed).
+     */
+    fun requestDelete(uri: Uri, onConsent: (IntentSender) -> Unit, onDone: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            when (val result = repository.deleteMedia(uri)) {
+                is DeleteResult.Deleted -> {
+                    reload()
+                    onDone(true, "Deleted")
+                }
+                is DeleteResult.NeedsConsent -> onConsent(result.intentSender)
+                is DeleteResult.Failed -> onDone(false, result.message)
+            }
+        }
+    }
+
+    /** Rescans after a consent grant or a viewer delete. */
+    fun refreshAfterDelete() {
+        viewModelScope.launch { reload() }
+    }
 }

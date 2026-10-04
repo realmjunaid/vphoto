@@ -22,7 +22,9 @@ data class DevicePhotoRow(
     val size: Long,
     val mimeType: String = "",
     val durationMs: Long = 0L,
-    val isAnimatedWebp: Boolean = false
+    val isAnimatedWebp: Boolean = false,
+    val width: Int = 0,
+    val height: Int = 0
 ) {
     /** GIF always animates; WebP may be animated — both decode cheaper for smooth playback. */
     val needsLightDecode: Boolean

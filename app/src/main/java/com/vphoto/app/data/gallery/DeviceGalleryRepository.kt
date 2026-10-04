@@ -1,9 +1,11 @@
 package com.vphoto.app.data.gallery
 
 import android.Manifest
+import android.app.RecoverableSecurityException
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
@@ -15,12 +17,26 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Outcome of a MediaStore delete request. */
+sealed interface DeleteResult {
+    data object Deleted : DeleteResult
+    /** System consent dialog required (Android 10+): launch the sender, then retry on OK. */
+    data class NeedsConsent(val intentSender: android.content.IntentSender) : DeleteResult
+    data class Failed(val message: String) : DeleteResult
+}
+
 /** MediaStore permissions for the auto device gallery (no manual folder pick needed). */
 fun deviceGalleryPermissions(): Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-    } else {
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    } else {
+        // Pre-Q deletes go through the filesystem permission, not a consent dialog.
+        arrayOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        )
     }
 
 fun hasDeviceGalleryPermission(context: Context): Boolean =
@@ -69,7 +85,9 @@ class DeviceGalleryRepository @Inject constructor(
             MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Images.Media.DATE_MODIFIED,
             MediaStore.Images.Media.SIZE,
-            MediaStore.Images.Media.MIME_TYPE
+            MediaStore.Images.Media.MIME_TYPE,
+            MediaStore.Images.Media.WIDTH,
+            MediaStore.Images.Media.HEIGHT
         )
         val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
         try {
@@ -80,6 +98,8 @@ class DeviceGalleryRepository @Inject constructor(
                 val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
                 val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
+                val widthCol = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                val heightCol = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
                     val uri = ContentUris.withAppendedId(collection, id)
@@ -92,7 +112,9 @@ class DeviceGalleryRepository @Inject constructor(
                             bucketName = cursor.getString(bucketCol)?.takeIf { it.isNotBlank() } ?: "Unknown",
                             dateModified = cursor.getLong(dateCol),
                             size = try { cursor.getLong(sizeCol) } catch (_: Exception) { 0L },
-                            mimeType = mime
+                            mimeType = mime,
+                            width = if (widthCol >= 0) try { cursor.getInt(widthCol) } catch (_: Exception) { 0 } else 0,
+                            height = if (heightCol >= 0) try { cursor.getInt(heightCol) } catch (_: Exception) { 0 } else 0
                         )
                     )
                 }
@@ -113,7 +135,9 @@ class DeviceGalleryRepository @Inject constructor(
             MediaStore.Video.Media.DATE_MODIFIED,
             MediaStore.Video.Media.SIZE,
             MediaStore.Video.Media.MIME_TYPE,
-            MediaStore.Video.Media.DURATION
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.WIDTH,
+            MediaStore.Video.Media.HEIGHT
         )
         val sortOrder = "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
         try {
@@ -125,6 +149,8 @@ class DeviceGalleryRepository @Inject constructor(
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
                 val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
                 val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                val widthCol = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
+                val heightCol = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
                     // Offset video IDs so album/grid keys never collide with image IDs.
@@ -137,7 +163,9 @@ class DeviceGalleryRepository @Inject constructor(
                             dateModified = cursor.getLong(dateCol),
                             size = try { cursor.getLong(sizeCol) } catch (_: Exception) { 0L },
                             mimeType = cursor.getString(mimeCol) ?: "video/*",
-                            durationMs = try { cursor.getLong(durationCol) } catch (_: Exception) { 0L }
+                            durationMs = try { cursor.getLong(durationCol) } catch (_: Exception) { 0L },
+                            width = if (widthCol >= 0) try { cursor.getInt(widthCol) } catch (_: Exception) { 0 } else 0,
+                            height = if (heightCol >= 0) try { cursor.getInt(heightCol) } catch (_: Exception) { 0 } else 0
                         )
                     )
                 }
@@ -178,6 +206,29 @@ class DeviceGalleryRepository @Inject constructor(
 
     /** The current in-memory snapshot (for background flag refreshes). */
     fun cachedSnapshot(): List<DevicePhotoRow> = cachedPhotos.orEmpty()
+
+    /**
+     * Deletes one item from the device. On Android 10+ the system may demand
+     * user consent ([DeleteResult.NeedsConsent]): launch the sender and retry on OK.
+     * The cache is dropped on success so the next load rescans.
+     */
+    suspend fun deleteMedia(uri: Uri): DeleteResult = withContext(Dispatchers.IO) {
+        try {
+            val rows = context.contentResolver.delete(uri, null, null)
+            if (rows > 0) {
+                cachedPhotos = null
+                DeleteResult.Deleted
+            } else {
+                DeleteResult.Failed("File not found")
+            }
+        } catch (e: RecoverableSecurityException) {
+            DeleteResult.NeedsConsent(e.userAction.actionIntent.intentSender)
+        } catch (e: SecurityException) {
+            DeleteResult.Failed(e.message ?: "Permission denied")
+        } catch (e: Exception) {
+            DeleteResult.Failed(e.message ?: "Delete failed")
+        }
+    }
 
     /**
      * Fills in animated-WebP flags after the first paint: opening one stream per

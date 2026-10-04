@@ -41,7 +41,7 @@ val missingReleaseSigning: List<String> = buildList {
 }
 
 /** Single place for the version: also names the APK file (vphoto_vX.Y.Z.apk). */
-val APP_VERSION_NAME = "1.0.4"
+val APP_VERSION_NAME = "1.0.5"
 
 android {
     namespace = "com.vphoto.app"
@@ -62,7 +62,7 @@ android {
         targetSdk = 36
         // VPhoto starts fresh: new package identity, first version.
         // Bump APP_VERSION_NAME (and code) here; the APK file is named from it below.
-        versionCode = 5
+        versionCode = 6
         versionName = APP_VERSION_NAME
     }
 
